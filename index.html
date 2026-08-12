@@ -1,0 +1,388 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>My Apps Hub</title>
+<link href="https://fonts.googleapis.com/css2?family=Lora:ital,wght@0,400;0,600;1,400&family=Nunito:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --cream: #f2f6fb;
+    --warm-brown: #244a6b;
+    --light-brown: #7fa2c4;
+    --accent: #2b7fb8;
+    --accent-light: #dbe9f5;
+    --text: #202b38;
+    --text-muted: #62778d;
+    --card-bg: #ffffff;
+    --border: #d6e2ee;
+    --shadow: 0 2px 16px rgba(20,50,80,0.10);
+    --red: #c0392b;
+    --red-light: #fbe9e7;
+  }
+
+  body {
+    font-family: 'Nunito', sans-serif;
+    background: var(--cream);
+    color: var(--text);
+    min-height: 100vh;
+  }
+
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background-image:
+      radial-gradient(ellipse at 15% 20%, rgba(212,118,59,0.08) 0%, transparent 50%),
+      radial-gradient(ellipse at 85% 75%, rgba(192,144,112,0.10) 0%, transparent 50%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  .page { position: relative; z-index: 1; max-width: 900px; margin: 0 auto; padding: 0 1.5rem 4rem; }
+
+  header { text-align: center; padding: 2.5rem 0 1.5rem; }
+  header h1 {
+    font-family: 'Lora', serif;
+    font-size: clamp(1.8rem, 5vw, 2.4rem);
+    font-weight: 600;
+    color: var(--warm-brown);
+  }
+  header p { font-size: 1rem; color: var(--text-muted); margin-top: 0.4rem; }
+
+  .account-bar { display: flex; align-items: center; justify-content: center; gap: 12px;
+    font-size: 0.9rem; color: var(--text-muted); margin-top: 0.75rem; }
+  .account-bar a { color: var(--accent); cursor: pointer; text-decoration: underline; }
+
+  /* Tabs */
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 1.5rem 0; }
+  .tab-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: 50px;
+    padding: 0.5rem 1rem; font-family: 'Nunito', sans-serif; font-size: 0.9rem; font-weight: 700;
+    color: var(--warm-brown); cursor: pointer; box-shadow: var(--shadow);
+  }
+  .tab-btn:hover { border-color: var(--accent); }
+  .tab-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .tab-btn .lock { font-size: 0.8rem; }
+
+  /* Content area: either the login card or a selected app's tile */
+  .content-card {
+    max-width: 420px; margin: 0 auto;
+    background: var(--card-bg); border: 1px solid var(--border); border-radius: 18px;
+    padding: 1.75rem 1.5rem; box-shadow: var(--shadow);
+  }
+
+  .content-card h2 { font-family: 'Lora', serif; font-size: 1.3rem; font-weight: 600;
+    color: var(--warm-brown); text-align: center; margin-bottom: 0.4rem; }
+  .content-card .sub { text-align: center; color: var(--text-muted); font-size: 0.9rem; margin-bottom: 1.25rem; }
+
+  .field { margin-bottom: 1rem; }
+  .field label { display: block; font-size: 0.85rem; font-weight: 700; color: var(--text); margin-bottom: 0.3rem; }
+  .field input {
+    width: 100%; font-size: 0.95rem; padding: 0.7rem 0.85rem;
+    border: 1px solid var(--border); border-radius: 10px; background: var(--cream); color: var(--text);
+  }
+
+  .btn {
+    display: block; width: 100%; padding: 0.75rem 1.2rem; border-radius: 50px; border: none;
+    background: var(--accent); color: #fff; font-family: 'Nunito', sans-serif;
+    font-size: 0.95rem; font-weight: 700; cursor: pointer; text-align: center;
+  }
+  .btn:hover { background: #1f6390; }
+  .btn-outline { background: #fff; color: var(--accent); border: 1.5px solid var(--accent); }
+  .btn-outline:hover { background: var(--accent-light); }
+
+  .form-links { display: flex; align-items: center; justify-content: space-between;
+    font-size: 0.85rem; margin: 0.75rem 0; }
+  .form-links a { color: var(--accent); cursor: pointer; text-decoration: underline; }
+
+  .divider { display: flex; align-items: center; gap: 0.75rem; margin: 1.1rem 0; font-size: 0.8rem; color: var(--text-muted); }
+  .divider::before, .divider::after { content: ''; flex: 1; height: 1px; background: var(--border); }
+
+  .error-msg { background: var(--red-light); color: var(--red); border-radius: 10px;
+    padding: 0.6rem 0.85rem; font-size: 0.85rem; margin-top: 0.75rem; }
+  .status-msg { text-align: center; padding: 2rem; color: var(--text-muted); font-size: 0.9rem; }
+
+  .hidden { display: none; }
+
+  /* App tile (matches personalapps.html's card language) */
+  .app-tile-icon {
+    width: 56px; height: 56px; border-radius: 16px; display: flex; align-items: center;
+    justify-content: center; font-size: 1.8rem; margin: 0 auto 0.75rem;
+  }
+  .icon-purple { background: #ede8fb; }
+  .icon-green  { background: #e4f5eb; }
+  .icon-orange { background: #fdecd8; }
+  .icon-rose   { background: #fde8ee; }
+  .icon-teal   { background: #e0f5ef; }
+  .icon-blue   { background: #e3eefb; }
+
+  .app-tile-name { font-family: 'Lora', serif; font-size: 1.15rem; font-weight: 600;
+    color: var(--warm-brown); text-align: center; }
+  .app-tile-desc { font-size: 0.9rem; color: var(--text-muted); line-height: 1.6;
+    text-align: center; margin: 0.5rem 0 1.25rem; }
+  .app-tile-lock { text-align: center; font-size: 0.8rem; color: var(--text-muted); margin-top: 0.75rem; }
+
+  footer { text-align: center; padding: 2rem 0 0.5rem; font-size: 0.8rem; color: var(--text-muted); }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header>
+    <h1>My Apps Hub</h1>
+    <p>One login, all your apps.</p>
+    <div class="account-bar" id="accountBar"></div>
+  </header>
+
+  <div class="tabs" id="tabs"></div>
+
+  <main id="main">
+    <div class="status-msg">Loading…</div>
+  </main>
+
+  <footer>Part of <a href="https://seniorfamily.org" style="color:inherit">seniorfamily.org</a></footer>
+</div>
+
+<script>
+const API_URL = 'https://YOUR_DOMAIN/my-apps-hub-api/api.php';
+const AUTH_KEY = 'appsHubAuth';
+
+let auth = null;          // { token, displayName } | null
+let apps = [];             // apps visible to the current visitor
+let selectedAppKey = null; // which tab is active, or null (login card / placeholder)
+let authMode = 'login';    // 'login' | 'signup'
+
+const accountBar = document.getElementById('accountBar');
+const tabsEl = document.getElementById('tabs');
+const main = document.getElementById('main');
+
+// ── storage ──────────────────────────────────────────────────────────────
+function loadAuth() { try { return JSON.parse(localStorage.getItem(AUTH_KEY)); } catch { return null; } }
+function saveAuth(a) { localStorage.setItem(AUTH_KEY, JSON.stringify(a)); }
+function clearAuth() { localStorage.removeItem(AUTH_KEY); }
+
+async function fetchJSON(action, { method = 'GET', body } = {}) {
+  const opts = { method, headers: { 'Content-Type': 'application/json' } };
+  if (auth) opts.headers['Authorization'] = `Bearer ${auth.token}`;
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(`${API_URL}?action=${action}`, opts);
+  const data = await res.json();
+  if (!res.ok || data.error) throw new Error(data.error || `HTTP ${res.status}`);
+  return data;
+}
+
+// ── data flow ────────────────────────────────────────────────────────────
+async function loadApps() {
+  try {
+    const data = await fetchJSON('listApps');
+    apps = data.apps;
+    if (data.loggedIn && auth) {
+      auth.displayName = data.displayName || auth.displayName;
+      saveAuth(auth);
+    } else if (!data.loggedIn && auth) {
+      // Saved token no longer valid server-side.
+      clearAuth();
+      auth = null;
+    }
+    render();
+  } catch (err) {
+    main.innerHTML = `<div class="status-msg">Couldn't load apps: ${escHtml(err.message)}</div>`;
+  }
+}
+
+// ── rendering ────────────────────────────────────────────────────────────
+function render() {
+  renderAccountBar();
+  renderTabs();
+  renderMain();
+}
+
+function renderAccountBar() {
+  if (auth) {
+    accountBar.innerHTML = `Signed in as <strong>${escHtml(auth.displayName || '')}</strong> · <a id="logoutLink">Log out</a>`;
+    document.getElementById('logoutLink').addEventListener('click', doLogout);
+  } else {
+    accountBar.innerHTML = '';
+  }
+}
+
+function renderTabs() {
+  tabsEl.innerHTML = apps.map(a => `
+    <button class="tab-btn ${a.appKey === selectedAppKey ? 'active' : ''}" data-key="${a.appKey}">
+      <span>${a.iconEmoji || '📦'}</span> ${escHtml(a.name)}
+    </button>
+  `).join('');
+
+  tabsEl.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      selectedAppKey = btn.dataset.key;
+      render();
+    });
+  });
+}
+
+function renderMain() {
+  const selected = apps.find(a => a.appKey === selectedAppKey);
+
+  if (selected) {
+    main.innerHTML = `
+      <div class="content-card">
+        <div class="app-tile-icon ${selected.iconColorClass || 'icon-blue'}">${selected.iconEmoji || '📦'}</div>
+        <div class="app-tile-name">${escHtml(selected.name)}</div>
+        <div class="app-tile-desc">${escHtml(selected.description || '')}</div>
+        <button class="btn" id="openAppBtn">Open App</button>
+      </div>`;
+    document.getElementById('openAppBtn').addEventListener('click', () => launchApp(selected));
+    return;
+  }
+
+  if (auth) {
+    main.innerHTML = `<div class="status-msg">Pick an app above to get started.</div>`;
+    return;
+  }
+
+  renderAuthCard();
+}
+
+function renderAuthCard() {
+  if (authMode === 'signup') {
+    main.innerHTML = `
+      <div class="content-card">
+        <h2>Create an account</h2>
+        <div class="sub">Access more of your apps by signing up below.</div>
+        <div class="field">
+          <label for="suEmail">Email</label>
+          <input type="email" id="suEmail" autocomplete="username" placeholder="you@example.com">
+        </div>
+        <div class="field">
+          <label for="suName">Your name</label>
+          <input type="text" id="suName" autocomplete="name">
+        </div>
+        <div class="field">
+          <label for="suPw">Password (min. 8 characters)</label>
+          <input type="password" id="suPw" autocomplete="new-password">
+        </div>
+        <button class="btn" id="suBtn">Create account</button>
+        <div class="form-links" style="justify-content:center">
+          <a id="toLogin">Already have an account? Sign in</a>
+        </div>
+        <div id="authMsg"></div>
+      </div>`;
+    document.getElementById('suBtn').addEventListener('click', attemptSignup);
+    document.getElementById('suPw').addEventListener('keydown', e => { if (e.key === 'Enter') attemptSignup(); });
+    document.getElementById('toLogin').addEventListener('click', () => { authMode = 'login'; render(); });
+    return;
+  }
+
+  main.innerHTML = `
+    <div class="content-card">
+      <h2>Sign in to your apps</h2>
+      <div class="sub">Access more of your apps by signing in below.</div>
+      <div class="field">
+        <label for="liEmail">Email</label>
+        <input type="email" id="liEmail" autocomplete="username" placeholder="you@example.com">
+      </div>
+      <div class="field">
+        <label for="liPw">Password</label>
+        <input type="password" id="liPw" autocomplete="current-password">
+      </div>
+      <div class="form-links">
+        <a id="toSignupFromForgot">Forgot password?</a>
+        <a id="toSignup">Register for a password</a>
+      </div>
+      <button class="btn" id="liBtn">Sign In</button>
+      <div class="divider">or</div>
+      <button class="btn btn-outline" id="createAcctBtn">Create an account</button>
+      <div id="authMsg"></div>
+    </div>`;
+
+  document.getElementById('liBtn').addEventListener('click', attemptLogin);
+  document.getElementById('liPw').addEventListener('keydown', e => { if (e.key === 'Enter') attemptLogin(); });
+  document.getElementById('createAcctBtn').addEventListener('click', () => { authMode = 'signup'; render(); });
+  document.getElementById('toSignup').addEventListener('click', () => { authMode = 'signup'; render(); });
+  document.getElementById('toSignupFromForgot').addEventListener('click', () => {
+    document.getElementById('authMsg').innerHTML =
+      '<div class="error-msg">No self-serve password reset yet — contact Dennis.</div>';
+  });
+}
+
+// ── auth actions ─────────────────────────────────────────────────────────
+async function attemptLogin() {
+  const email = document.getElementById('liEmail').value.trim();
+  const password = document.getElementById('liPw').value;
+  const msg = document.getElementById('authMsg');
+  if (!email || !password) {
+    msg.innerHTML = '<div class="error-msg">Enter your email and password.</div>';
+    return;
+  }
+  msg.innerHTML = '';
+  try {
+    const data = await fetchJSON('login', { method: 'POST', body: { email, password } });
+    auth = { token: data.token, displayName: data.displayName || email };
+    saveAuth(auth);
+    selectedAppKey = null;
+    await loadApps();
+  } catch (err) {
+    msg.innerHTML = `<div class="error-msg">${escHtml(err.message)}</div>`;
+  }
+}
+
+async function attemptSignup() {
+  const email = document.getElementById('suEmail').value.trim();
+  const displayName = document.getElementById('suName').value.trim();
+  const password = document.getElementById('suPw').value;
+  const msg = document.getElementById('authMsg');
+  if (!email || !password) {
+    msg.innerHTML = '<div class="error-msg">Enter an email and password.</div>';
+    return;
+  }
+  msg.innerHTML = '';
+  try {
+    const data = await fetchJSON('signup', { method: 'POST', body: { email, password, displayName } });
+    auth = { token: data.token, displayName: data.displayName || email };
+    saveAuth(auth);
+    selectedAppKey = null;
+    await loadApps();
+  } catch (err) {
+    msg.innerHTML = `<div class="error-msg">${escHtml(err.message)}</div>`;
+  }
+}
+
+async function doLogout() {
+  try { await fetchJSON('logout', { method: 'POST', body: { token: auth.token } }); } catch {}
+  clearAuth();
+  auth = null;
+  selectedAppKey = null;
+  await loadApps();
+}
+
+// ── launching an app ─────────────────────────────────────────────────────
+function launchApp(app) {
+  let url = app.launchUrl;
+  if (app.ssoEnabled && auth) {
+    const sep = url.includes('?') ? '&' : '?';
+    url = `${url}${sep}token=${encodeURIComponent(auth.token)}`;
+  }
+  window.open(url, '_blank', 'noopener');
+}
+
+// ── helpers ──────────────────────────────────────────────────────────────
+function escHtml(str) {
+  if (!str) return '';
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ── init ────────────────────────────────────────────────────────────────
+if (API_URL.includes('YOUR_DOMAIN')) {
+  document.body.innerHTML = '<div class="error-msg" style="margin:24px">Set API_URL in index.html to your deployed api.php URL.</div>';
+} else {
+  auth = loadAuth();
+  loadApps();
+}
+</script>
+</body>
+</html>
