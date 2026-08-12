@@ -128,18 +128,18 @@ Apps with `sso_enabled = 1` in the `apps` table get launched with the
 current session token appended to their URL
 (`https://.../?token=abc123...`), so a user who's already logged into the
 Hub doesn't have to log in again inside that app. Right now that's
-**T-Minus** and **Shed Inventory** — the two other apps that also live on
-MyDataWorld. Each of those apps' `index.html` needed a small update to look
-for `?token=` on load and use it instead of showing its own login screen
-(done as part of this rollout).
+**T-Minus**, **Shed Inventory**, and **PWI Weight Tracker** — the other
+apps that also live on MyDataWorld. Each of those apps' `index.html` needed
+a small update to look for `?token=` on load and use it instead of showing
+its own login screen (done as part of this rollout).
 
 Every other app either has its own separate login system (Master
-Checklist, PWI Weight Tracker — Google Sheets-backed) or none at all — SSO
-doesn't apply to those either way, since they were never sharing this login
-to begin with. Marking one of those apps "private" here controls whether
-its tile shows up in the Hub; it does **not** add real login protection to
-an app that doesn't already have one. `Choir Admin Panel` already has its
-own password protection, so that one's covered regardless.
+Checklist) or none at all — SSO doesn't apply to those either way, since
+they were never sharing this login to begin with. Marking one of those apps
+"private" here controls whether its tile shows up in the Hub; it does
+**not** add real login protection to an app that doesn't already have one.
+`Choir Admin Panel` already has its own password protection, so that one's
+covered regardless.
 
 ## Notes
 

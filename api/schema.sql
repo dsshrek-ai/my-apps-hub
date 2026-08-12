@@ -122,7 +122,7 @@ INSERT INTO apps (app_key, name, is_public, description, icon_emoji, icon_color_
 
   ('pwi-weight-tracker', 'PWI Weight Tracker', 0,
    'Log daily weigh-ins for the family — plus gym, walk, and Zumba check-ins — and see how each person is tracking, with a color-coded readout and weekly activity charts.',
-   '⚖️', 'icon-green', 'https://dsshrek-ai.github.io/OurWeightLoss/', 0),
+   '⚖️', 'icon-green', 'https://dsshrek-ai.github.io/OurWeightLoss/', 1),
 
   ('t-minus', 'T-Minus', 0,
    'A countdown tracker — log an event''s date and time and watch a live countdown tick down, with a progress bar showing how far along you are.',
