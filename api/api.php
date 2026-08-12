@@ -79,6 +79,40 @@ function optionalUser(): ?array {
   return $result ?: null;
 }
 
+function requireUser(): array {
+  $header = $_SERVER['HTTP_AUTHORIZATION'] ?? '';
+  if (!preg_match('/^Bearer\s+(.+)$/i', $header, $m)) {
+    fail('Missing or invalid Authorization header', 401);
+  }
+  $token = $m[1];
+
+  $stmt = db()->prepare(
+    'SELECT u.id, u.username, u.display_name, u.is_admin
+     FROM sessions s JOIN users u ON u.id = s.user_id
+     WHERE s.token = ? AND s.expires_at > NOW()'
+  );
+  $stmt->bind_param('s', $token);
+  $stmt->execute();
+  $result = $stmt->get_result()->fetch_assoc();
+  $stmt->close();
+
+  if (!$result) {
+    fail('Session expired or invalid — please log in again', 401);
+  }
+  return $result;
+}
+
+// Used by every admin.html action — a normal login isn't enough, the
+// account also needs users.is_admin = 1 (set by hand in the database; see
+// SETUP.md).
+function requireAdmin(): array {
+  $user = requireUser();
+  if (!(bool)($user['is_admin'] ?? false)) {
+    fail('Not authorized', 403);
+  }
+  return $user;
+}
+
 // ---- Router ----
 
 $action = $_GET['action'] ?? '';
@@ -208,6 +242,99 @@ switch ($action) {
         'ssoEnabled' => (bool)$r['sso_enabled'],
       ], $rows),
     ]);
+  }
+
+  // ---------- Admin (admin.html) ----------
+
+  case 'adminLookupUser': {
+    requireAdmin();
+    $email = trim((string)($_GET['email'] ?? ''));
+    if ($email === '') {
+      fail('email is required');
+    }
+
+    $stmt = db()->prepare('SELECT id, display_name FROM users WHERE username = ?');
+    $stmt->bind_param('s', $email);
+    $stmt->execute();
+    $user = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$user) {
+      respond(['found' => false]);
+    }
+    respond(['found' => true, 'userId' => (int)$user['id'], 'displayName' => $user['display_name']]);
+  }
+
+  // Every app in the system, with whether this specific user currently has
+  // a grant (and can_edit) for each.
+  case 'adminGetUserAccess': {
+    requireAdmin();
+    $userId = (int)($_GET['userId'] ?? 0);
+    if ($userId <= 0) {
+      fail('userId is required');
+    }
+
+    $stmt = db()->prepare(
+      'SELECT a.id AS app_id, a.app_key, a.name, a.icon_emoji, a.is_public,
+              aa.user_id IS NOT NULL AS has_grant, IFNULL(aa.can_edit, 0) AS can_edit
+       FROM apps a
+       LEFT JOIN app_access aa ON aa.app_id = a.id AND aa.user_id = ?
+       ORDER BY a.name'
+    );
+    $stmt->bind_param('i', $userId);
+    $stmt->execute();
+    $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+    $stmt->close();
+
+    respond(['apps' => array_map(fn($r) => [
+      'appId' => (int)$r['app_id'],
+      'appKey' => $r['app_key'],
+      'name' => $r['name'],
+      'iconEmoji' => $r['icon_emoji'],
+      'isPublic' => (bool)$r['is_public'],
+      'granted' => (bool)$r['has_grant'],
+    ], $rows)]);
+  }
+
+  // Body: { userId, grants: [{ appId, granted }, ...] } — one entry per app
+  // in the system, reflecting the current state of every checkbox. Diffs
+  // against what's already in app_access: inserts newly-checked apps
+  // (can_edit = 1), deletes newly-unchecked ones, leaves everything else
+  // alone (so an existing grant's granted_at/can_edit isn't disturbed just
+  // because the box was already checked).
+  case 'adminSaveAccess': {
+    requireAdmin();
+    $body = jsonBody();
+    $userId = (int)($body['userId'] ?? 0);
+    $grants = is_array($body['grants'] ?? null) ? $body['grants'] : [];
+    if ($userId <= 0) {
+      fail('userId is required');
+    }
+
+    $insert = db()->prepare(
+      'INSERT INTO app_access (user_id, app_id, can_edit) VALUES (?, ?, 1)
+       ON DUPLICATE KEY UPDATE user_id = user_id'
+    );
+    $delete = db()->prepare('DELETE FROM app_access WHERE user_id = ? AND app_id = ?');
+
+    foreach ($grants as $g) {
+      $appId = (int)($g['appId'] ?? 0);
+      $granted = (bool)($g['granted'] ?? false);
+      if ($appId <= 0) {
+        continue;
+      }
+      if ($granted) {
+        $insert->bind_param('ii', $userId, $appId);
+        $insert->execute();
+      } else {
+        $delete->bind_param('ii', $userId, $appId);
+        $delete->execute();
+      }
+    }
+    $insert->close();
+    $delete->close();
+
+    respond(['success' => true]);
   }
 
   default:

@@ -37,30 +37,73 @@ or push this repo and turn on GitHub Pages (Settings → Pages → Deploy from
 branch → `main` / `/(root)`) — your call, both work the same way the other
 apps do.
 
-## 5. Create your account and grant yourself the private apps
+## 5. Create your account, make yourself an admin, and grant yourself access
 
 1. Open the deployed Hub and sign up with your email and a password.
-2. Run the bootstrap query at the bottom of `api/schema.sql` (uncomment it,
-   fill in your email) to grant yourself every private app in one shot —
-   otherwise you'd be locked out of your own apps on day one.
-
-## Adding another person
-
-1. Have them sign up through the Hub — this only creates their login.
-2. Grant them whichever private apps they should see:
+2. Run:
    ```sql
-   INSERT INTO app_access (user_id, app_id)
-   SELECT u.id, a.id FROM users u, apps a
-   WHERE u.username = 'them@example.com' AND a.app_key = 'shed-inventory';
+   UPDATE users SET is_admin = 1 WHERE username = 'you@example.com';
    ```
-   Repeat the last line's `app_key` for each app they need. Nothing to do
-   for public apps — everyone already sees those.
+3. Either run the bootstrap query at the bottom of `api/schema.sql`
+   (uncomment it, fill in your email) to grant yourself every private app
+   in one shot, or open `admin.html` and check the boxes yourself now that
+   you're an admin. Either way — otherwise you'd be locked out of your own
+   apps on day one.
 
-(The plan is to eventually build an admin screen for this — pick an app,
-paste in a list of emails, and have it email each person letting them know
-the app's been added for them. Not built yet; today this is a manual SQL
-step. `app_access` already has everything that screen would need to write
-to, so building it later is additive, not a redesign.)
+## Adding another person (via `admin.html`)
+
+1. Have them sign up through the Hub — this only creates their login,
+   nothing more.
+2. Open `admin.html` (linked from the bottom of the main Hub page — or just
+   go there directly), enter their email, and check whichever apps they
+   should have. Save.
+   - For a **private** app, checking the box is what lets them see/open it
+     at all.
+   - For a **public** app, everyone can already open it — checking the box
+     here grants **edit** rights specifically (see "Public apps with
+     editors" below). Those are marked `(Public — box grants editing)` in
+     the list so it's not ambiguous which kind of grant you're making.
+3. If the email isn't found yet, `admin.html` tells you so and lets you
+   search again — it never creates an account for someone; they have to
+   sign up themselves first.
+
+`admin.html` requires `users.is_admin = 1` on your account (step 2 above) —
+anyone else who's merely logged in gets a 403 if they try to use it.
+
+## Public apps with editors (`can_edit`)
+
+Some public apps need a middle ground: anyone can use the app, but only
+specific people should be able to edit its content. **Senior Family
+Cookbook** is the motivating case — everyone can browse/scale/favorite/
+shopping-list, but only people you authorize should be able to add or edit
+recipes.
+
+`app_access.can_edit` is what models this. For a private app it's always
+`1` (no view-only tier exists there yet — having a grant at all means full
+access). For a public app, a grant means "can edit"; no grant just means
+"uses it like everyone else." `admin.html`'s checkbox always creates grants
+with `can_edit = 1`, since that's the only kind of grant a public app needs
+today.
+
+**Important caveat**: this only takes effect for apps that actually check
+it. Right now, only apps built to consult MyDataWorld can enforce this at
+all.
+
+## Roadmap
+
+- **Revisit Senior Family Cookbook and Living Lean.** Both currently run on
+  a separate database (the old "RecipeFile" backend), not MyDataWorld — so
+  `can_edit` grants made here for the Cookbook are recorded correctly but
+  not enforced anywhere yet. Needs the same kind of retrofit T-Minus and
+  Shed Inventory got for SSO: give the Cookbook a real login against
+  MyDataWorld and have it check `can_edit` before allowing a recipe to be
+  added/edited. Until then, editing there is open to whoever it's open to
+  today (check that app's own code for however it currently gates writes,
+  if at all).
+- Email notification on grant (mentioned as a nice-to-have when this was
+  still a future idea) — `admin.html` doesn't send anything yet; it just
+  updates `app_access` silently. Adding an email step later is additive,
+  not a redesign.
 
 ## Single sign-on (SSO) with other apps
 

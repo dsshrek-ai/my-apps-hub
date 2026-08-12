@@ -40,6 +40,20 @@ CREATE TABLE IF NOT EXISTS app_access (
   FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE
 ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- ---------- SCHEMA CHANGE: admin flag + edit-level access ----------
+-- Run once. is_admin gates the new admin.html tool. can_edit distinguishes
+-- "can open this app" from "can edit within it" — only meaningful for
+-- public apps today (a public app needs no app_access row to be *used*,
+-- so a row there means "this person can edit," not "has access"). Defaults
+-- to 1 so every existing grant keeps meaning what it already means: full
+-- access to a private app.
+
+ALTER TABLE users ADD COLUMN is_admin TINYINT(1) NOT NULL DEFAULT 0;
+ALTER TABLE app_access ADD COLUMN can_edit TINYINT(1) NOT NULL DEFAULT 1;
+
+-- One-time: make yourself an admin so admin.html will let you in.
+-- UPDATE users SET is_admin = 1 WHERE username = 'you@example.com';
+
 -- ---------- SCHEMA CHANGE: display metadata for the Hub's tiles ----------
 -- `apps` previously only needed app_key/name/is_public for the access-check
 -- use case. The Hub also needs to render a tile per app, so this adds the
