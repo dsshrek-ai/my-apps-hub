@@ -134,7 +134,11 @@ INSERT INTO apps (app_key, name, is_public, description, icon_emoji, icon_color_
 
   ('shed-inventory', 'Shed Inventory', 0,
    'Track what''s stored where across the sheds — shed, shelf, and level, right down to the bin. Shared only with household members you invite.',
-   '🧰', 'icon-orange', 'https://dsshrek-ai.github.io/shed-inventory/', 1)
+   '🧰', 'icon-orange', 'https://dsshrek-ai.github.io/shed-inventory/', 1),
+
+  ('admin-tool', 'Admin Tool', 0,
+   'Manage who has access to which apps. Grant sparingly.',
+   '🔑', 'icon-rose', 'https://seniorfamily.org/admin.html', 0)
 ON DUPLICATE KEY UPDATE
   name             = VALUES(name),
   is_public        = VALUES(is_public),

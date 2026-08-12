@@ -50,25 +50,42 @@ apps do.
    you're an admin. Either way — otherwise you'd be locked out of your own
    apps on day one.
 
-## Adding another person (via `admin.html`)
+## Adding another person (via the Admin Tool)
+
+`admin.html` is registered as its own private app in `apps` (`admin-tool`,
+`🔑`), so it shows up as a normal tile in the Hub — like everything else,
+just granted to almost nobody. Two separate gates protect it, and it's
+worth knowing they're different:
+
+- **`app_access` for `admin-tool`** only controls whether the *tile* shows
+  up in someone's tab strip. It's a convenience, not a lock — `admin.html`
+  is a public URL like any other page.
+- **`users.is_admin = 1`** is the real gate — every admin action in
+  `api.php` checks this server-side and returns a 403 without it,
+  regardless of how someone got to the page.
+
+So: grant yourself both (the bootstrap query below already grants every
+private app, `admin-tool` included, so one run covers it) — but if you ever
+want someone to see the tile without being able to actually act as an
+admin, that's not possible with just an `app_access` grant; only
+`is_admin` matters for real. In practice, only ever set `is_admin = 1` for
+people you'd trust with full access to everything anyway.
+
+To grant someone access to a normal app:
 
 1. Have them sign up through the Hub — this only creates their login,
    nothing more.
-2. Open `admin.html` (linked from the bottom of the main Hub page — or just
-   go there directly), enter their email, and check whichever apps they
-   should have. Save.
+2. Open the Admin Tool tile, enter their email, and check whichever apps
+   they should have. Save.
    - For a **private** app, checking the box is what lets them see/open it
      at all.
    - For a **public** app, everyone can already open it — checking the box
      here grants **edit** rights specifically (see "Public apps with
      editors" below). Those are marked `(Public — box grants editing)` in
      the list so it's not ambiguous which kind of grant you're making.
-3. If the email isn't found yet, `admin.html` tells you so and lets you
-   search again — it never creates an account for someone; they have to
-   sign up themselves first.
-
-`admin.html` requires `users.is_admin = 1` on your account (step 2 above) —
-anyone else who's merely logged in gets a 403 if they try to use it.
+3. If the email isn't found yet, the tool tells you so and lets you search
+   again — it never creates an account for someone; they have to sign up
+   themselves first.
 
 ## Public apps with editors (`can_edit`)
 
