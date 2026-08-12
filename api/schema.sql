@@ -86,7 +86,7 @@ INSERT INTO apps (app_key, name, is_public, description, icon_emoji, icon_color_
 
   ('choir-admin-panel', 'Choir Admin Panel', 0,
    'Maintenance panel for the South Jordan Choral Arts site — add, edit, and delete schedule entries, songs, announcements, and more. For the director and section leaders.',
-   '🔐', 'icon-blue', 'https://dsshrek-ai.github.io/SoJoMemberApp/admin.html', 0),
+   '🔐', 'icon-blue', 'https://dsshrek-ai.github.io/SoJoMemberApp/admin.html', 1),
 
   ('winco-staples', 'Winco Staples', 0,
    'A personal shopping list app for keeping staple grocery items stocked. Tracks quantities and estimated costs at a glance.',
@@ -98,7 +98,7 @@ INSERT INTO apps (app_key, name, is_public, description, icon_emoji, icon_color_
 
   ('senior-family-cookbook', 'Senior Family Cookbook', 1,
    'A living repository of family recipes — open to everyone, related or not! Want to add yours? Just contact Dennis.',
-   '📖', 'icon-rose', 'https://dsshrek-ai.github.io/senior-family-cookbook/', 0),
+   '📖', 'icon-rose', 'https://dsshrek-ai.github.io/senior-family-cookbook/', 1),
 
   ('digital-designs', 'Digital Designs', 1,
    'A logic gate puzzle game — flip switches to match the target output. Circuits grow more complex as you advance through the levels.',
@@ -106,7 +106,7 @@ INSERT INTO apps (app_key, name, is_public, description, icon_emoji, icon_color_
 
   ('living-lean', 'Living Lean', 1,
    'A personal collection of low-carb, low-calorie recipes — built for the long haul, not just a diet. Install it on your home screen for quick access anytime.',
-   '🥗', 'icon-teal', 'https://dsshrek-ai.github.io/senior-family-cookbook/living-lean/', 0),
+   '🥗', 'icon-teal', 'https://dsshrek-ai.github.io/senior-family-cookbook/living-lean/', 1),
 
   ('ico-vex', 'IcoVex', 1,
    'A tile-swapping puzzle game — arrange the board so every shared edge between tiles shows a matching icon. Multiple grid sizes and difficulty levels.',

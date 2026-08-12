@@ -108,15 +108,17 @@ all.
 
 ## Roadmap
 
-- **Revisit Senior Family Cookbook and Living Lean.** Both currently run on
-  a separate database (the old "RecipeFile" backend), not MyDataWorld — so
-  `can_edit` grants made here for the Cookbook are recorded correctly but
-  not enforced anywhere yet. Needs the same kind of retrofit T-Minus and
-  Shed Inventory got for SSO: give the Cookbook a real login against
-  MyDataWorld and have it check `can_edit` before allowing a recipe to be
-  added/edited. Until then, editing there is open to whoever it's open to
-  today (check that app's own code for however it currently gates writes,
-  if at all).
+- ~~Revisit Senior Family Cookbook and Living Lean~~ — **done.** Both moved
+  off the old standalone "RecipeFile" database onto MyDataWorld
+  (`cookbook_recipes`/`cookbook_tags`/`cookbook_recipe_tags`), and recipe
+  add/edit/delete now checks `app_access.can_edit` for the `senior-family-
+  cookbook`/`living-lean` app_key, replacing the old per-account
+  `users.collection` restriction that lived only in that standalone
+  database. Both are still public apps — browsing/scaling/favoriting/
+  shopping-lists stay open to everyone, only writes are gated. See that
+  repo's `api/api.php` for the pattern; it's the same auth/authorization
+  shape as Choir Admin Panel, applied to a `can_edit`-on-a-public-app case
+  instead of a private-app case.
 - Email notification on grant (mentioned as a nice-to-have when this was
   still a future idea) — `admin.html` doesn't send anything yet; it just
   updates `app_access` silently. Adding an email step later is additive,
@@ -128,18 +130,21 @@ Apps with `sso_enabled = 1` in the `apps` table get launched with the
 current session token appended to their URL
 (`https://.../?token=abc123...`), so a user who's already logged into the
 Hub doesn't have to log in again inside that app. Right now that's
-**T-Minus**, **Shed Inventory**, and **PWI Weight Tracker** — the other
-apps that also live on MyDataWorld. Each of those apps' `index.html` needed
-a small update to look for `?token=` on load and use it instead of showing
-its own login screen (done as part of this rollout).
+**T-Minus**, **Shed Inventory**, **PWI Weight Tracker**, **Choir Admin
+Panel**, **Senior Family Cookbook**, and **Living Lean** — the other apps
+that also live on MyDataWorld. For the two public cookbook apps, SSO
+doesn't skip a login screen (they never had one to browse) — it just means
+a Hub-launched visit shows up already in edit mode if that account has
+`can_edit`, instead of needing to log in a second time inside the app to
+unlock the Add/Edit/Delete buttons. Each app needed a small update to look
+for `?token=` on load and use it instead of
+showing its own login screen (done as part of each app's rollout).
 
 Every other app either has its own separate login system (Master
 Checklist) or none at all — SSO doesn't apply to those either way, since
 they were never sharing this login to begin with. Marking one of those apps
 "private" here controls whether its tile shows up in the Hub; it does
 **not** add real login protection to an app that doesn't already have one.
-`Choir Admin Panel` already has its own password protection, so that one's
-covered regardless.
 
 ## Notes
 
