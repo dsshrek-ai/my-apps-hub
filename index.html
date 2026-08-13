@@ -379,6 +379,27 @@ async function attemptLogin() {
   msg.innerHTML = '';
   try {
     const data = await fetchJSON('login', { method: 'POST', body: { email, password } });
+
+    if (data.needsActivation) {
+      // Account exists (an admin invited them) but has no password yet —
+      // jump straight into the same "you've been invited" activation
+      // screen the emailed link uses, instead of just failing the login.
+      inviteToken = data.inviteToken;
+      authMode = 'signup';
+      inviteInfo = null;
+      render();
+      fetch(`${API_URL}?action=getInvitation&token=${encodeURIComponent(inviteToken)}`)
+        .then(res => res.json())
+        .then(info => {
+          if (!info.error) {
+            inviteInfo = info;
+            if (authMode === 'signup') render();
+          }
+        })
+        .catch(() => {});
+      return;
+    }
+
     auth = { token: data.token, displayName: data.displayName || email };
     saveAuth(auth);
     selectedAppKey = null;

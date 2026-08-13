@@ -114,23 +114,35 @@ editing)` meaning as a normal grant) before anyone has signed up:
 
 1. Enter their email, click **Send Invitation** when the "no account"
    message appears, check whichever apps they should have, and send.
-2. This creates a row in `invitations` (14-day expiry) plus one
-   `invitation_apps` row per app you checked, and emails them a link
-   (`index.html?invite=<token>`).
-3. Their signup screen shows who invited them and which apps, with the
-   email field pre-filled and locked to the invited address. The moment
-   they finish signing up, the invited apps are granted (`can_edit = 1`)
-   automatically and the invitation is marked accepted — no separate trip
-   to the admin tool needed afterward.
-4. An invite token only works once and only for its own email — if it's
-   expired or already used, signup still works normally, it just won't have
-   the "you're invited" banner or the automatic grants.
-5. **Resending**: entering the same email again and clicking Send
-   Invitation updates the existing pending invitation (fresh token, fresh
-   14-day expiry, whatever app selection you just submitted) and re-sends
-   the email — the old link stops working. There's still no revoke UI; to
-   cancel an invitation outright, delete its row directly in `invitations`
-   via phpMyAdmin.
+2. This creates their `users` row **immediately** — `password_hash = NULL`
+   marks it as not yet activated — and grants `app_access` for the checked
+   apps right away too, exactly like a normal grant. Nothing about their
+   access is deferred until they finish signing up; a pending invitation is
+   purely "this account exists and is authorized, it just has no password
+   yet." A row in `invitations` (14-day expiry) ties it to who invited them
+   and drives the emailed link (`index.html?invite=<token>`).
+3. Their activation screen shows who invited them and which apps (pulled
+   live from `app_access`, so it always reflects the real current grants),
+   with the email field pre-filled and locked. Finishing that screen just
+   sets their password on the already-existing account — no separate
+   account-creation step, and no grants to redeem at that point since they
+   already happened in step 2.
+4. **If they try to log in before activating**: the login screen
+   auto-redirects them into that same activation screen (using the still-
+   valid invitation token) instead of just failing with "invalid password."
+   This covers someone who lost the email, bookmarked the Hub directly, or
+   just tried logging in out of habit. If the invitation has since expired,
+   they get a plain error telling them to ask for a new one instead.
+5. Once looked up again, an invited-but-not-activated account shows the
+   **normal access grid** (found — you can Save changes to their apps any
+   time, same as anyone else) plus a **Resend Invitation Email** button.
+   Resend re-syncs `app_access` to whatever's currently checked and sends a
+   fresh link/expiry — so it also works as "adjust + notify" in one click,
+   even before they've activated.
+6. An invite token only works once, only for its own email, and only while
+   unexpired. There's still no revoke UI; to cancel an invitation outright
+   (and the account it created), delete the `users` row directly via
+   phpMyAdmin (cascades to `app_access`/`invitations`/`sessions`).
 
 ## Public apps with editors (`can_edit`)
 

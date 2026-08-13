@@ -126,11 +126,17 @@ $action = $_GET['action'] ?? '';
 
 switch ($action) {
 
+  // Handles two cases with one action: a brand-new self-serve signup
+  // (INSERT), or activating an account an admin pre-created at invite time
+  // (UPDATE — that row already has its app_access grants, just password_hash
+  // IS NULL). Distinguishing them is just "does a row for this email
+  // already exist with no password set yet."
   case 'signup': {
     $body = jsonBody();
     $email = trim((string)($body['email'] ?? ''));
     $password = (string)($body['password'] ?? '');
     $displayName = trim((string)($body['displayName'] ?? ''));
+    $inviteToken = trim((string)($body['inviteToken'] ?? ''));
 
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
       fail('A valid email address is required');
@@ -139,21 +145,50 @@ switch ($action) {
       fail('Password must be at least 8 characters');
     }
 
-    $stmt = db()->prepare('SELECT id FROM users WHERE username = ?');
+    $stmt = db()->prepare('SELECT id, password_hash FROM users WHERE username = ?');
     $stmt->bind_param('s', $email);
     $stmt->execute();
-    $exists = $stmt->get_result()->fetch_row();
+    $existing = $stmt->get_result()->fetch_assoc();
     $stmt->close();
-    if ($exists) {
+
+    if ($existing && $existing['password_hash'] !== null) {
       fail('An account with that email already exists — log in instead', 409);
     }
 
     $hash = password_hash($password, PASSWORD_DEFAULT);
-    $ins = db()->prepare('INSERT INTO users (username, password_hash, display_name) VALUES (?, ?, ?)');
-    $ins->bind_param('sss', $email, $hash, $displayName);
-    $ins->execute();
-    $userId = $ins->insert_id;
-    $ins->close();
+
+    if ($existing) {
+      $userId = (int)$existing['id'];
+      $dn = $displayName !== '' ? $displayName : null;
+      $upd = db()->prepare('UPDATE users SET password_hash = ?, display_name = ? WHERE id = ?');
+      $upd->bind_param('ssi', $hash, $dn, $userId);
+      $upd->execute();
+      $upd->close();
+    } else {
+      $ins = db()->prepare('INSERT INTO users (username, password_hash, display_name) VALUES (?, ?, ?)');
+      $ins->bind_param('sss', $email, $hash, $displayName);
+      $ins->execute();
+      $userId = $ins->insert_id;
+      $ins->close();
+    }
+
+    // Mark whichever invitation this came from as accepted — by token if
+    // one was passed (arrived via the emailed link), otherwise any
+    // still-pending invitation for this account (arrived by retyping the
+    // invited email into "Create an account" instead of using the link).
+    if ($inviteToken !== '') {
+      $mark = db()->prepare(
+        'UPDATE invitations SET accepted_at = NOW() WHERE token = ? AND user_id = ? AND accepted_at IS NULL'
+      );
+      $mark->bind_param('si', $inviteToken, $userId);
+      $mark->execute();
+      $mark->close();
+    } else {
+      $mark = db()->prepare('UPDATE invitations SET accepted_at = NOW() WHERE user_id = ? AND accepted_at IS NULL');
+      $mark->bind_param('i', $userId);
+      $mark->execute();
+      $mark->close();
+    }
 
     $token = bin2hex(random_bytes(32));
     $days = SESSION_LIFETIME_DAYS;
@@ -163,39 +198,6 @@ switch ($action) {
     $sess->bind_param('sii', $token, $userId, $days);
     $sess->execute();
     $sess->close();
-
-    // Redeem a pending invitation, if this signup arrived via its emailed
-    // link — grants whatever apps the admin picked, then marks it used.
-    // A missing/expired/mismatched invite token never blocks signup itself;
-    // the account is still created either way.
-    $inviteToken = trim((string)($body['inviteToken'] ?? ''));
-    if ($inviteToken !== '') {
-      $inv = db()->prepare(
-        'SELECT id FROM invitations
-         WHERE token = ? AND email = ? AND expires_at > NOW() AND accepted_at IS NULL'
-      );
-      $inv->bind_param('ss', $inviteToken, $email);
-      $inv->execute();
-      $invitation = $inv->get_result()->fetch_assoc();
-      $inv->close();
-
-      if ($invitation) {
-        $invitationId = (int)$invitation['id'];
-        $grant = db()->prepare(
-          'INSERT INTO app_access (user_id, app_id, can_edit)
-           SELECT ?, app_id, 1 FROM invitation_apps WHERE invitation_id = ?
-           ON DUPLICATE KEY UPDATE can_edit = 1'
-        );
-        $grant->bind_param('ii', $userId, $invitationId);
-        $grant->execute();
-        $grant->close();
-
-        $markUsed = db()->prepare('UPDATE invitations SET accepted_at = NOW() WHERE id = ?');
-        $markUsed->bind_param('i', $invitationId);
-        $markUsed->execute();
-        $markUsed->close();
-      }
-    }
 
     respond(['token' => $token, 'displayName' => $displayName ?: $email]);
   }
@@ -213,6 +215,26 @@ switch ($action) {
     $stmt->execute();
     $user = $stmt->get_result()->fetch_assoc();
     $stmt->close();
+
+    // An account pre-created at invite time has no password yet. Rather
+    // than just failing here, look for the still-valid invitation and hand
+    // the client its token so it can jump straight into activation instead
+    // of a dead-end "invalid password."
+    if ($user && $user['password_hash'] === null) {
+      $inv = db()->prepare(
+        'SELECT token FROM invitations WHERE user_id = ? AND expires_at > NOW() AND accepted_at IS NULL
+         ORDER BY id DESC LIMIT 1'
+      );
+      $inv->bind_param('i', $user['id']);
+      $inv->execute();
+      $invitation = $inv->get_result()->fetch_assoc();
+      $inv->close();
+
+      if ($invitation) {
+        respond(['needsActivation' => true, 'inviteToken' => $invitation['token']]);
+      }
+      fail('This account hasn\'t set a password yet, and its invitation has expired — ask to be re-invited.', 401);
+    }
 
     if (!$user || !password_verify($password, $user['password_hash'])) {
       fail('Invalid email or password', 401);
@@ -334,7 +356,7 @@ switch ($action) {
     }
 
     $stmt = db()->prepare(
-      'SELECT i.id, i.email, u.display_name AS invited_by_name
+      'SELECT i.user_id, i.email, u.display_name AS invited_by_name
        FROM invitations i
        LEFT JOIN users u ON u.id = i.invited_by
        WHERE i.token = ? AND i.expires_at > NOW() AND i.accepted_at IS NULL'
@@ -348,11 +370,14 @@ switch ($action) {
       fail('This invitation is invalid or has expired', 404);
     }
 
+    // app_access (not invitation_apps) is the source of truth now — the
+    // grants exist for real as soon as the invitation is sent, so this
+    // shows whatever the account is actually currently authorized for.
     $apps = db()->prepare(
-      'SELECT a.name, a.icon_emoji FROM invitation_apps ia
-       JOIN apps a ON a.id = ia.app_id WHERE ia.invitation_id = ? ORDER BY a.name'
+      'SELECT a.name, a.icon_emoji FROM app_access aa
+       JOIN apps a ON a.id = aa.app_id WHERE aa.user_id = ? ORDER BY a.name'
     );
-    $apps->bind_param('i', $invitation['id']);
+    $apps->bind_param('i', $invitation['user_id']);
     $apps->execute();
     $appRows = $apps->get_result()->fetch_all(MYSQLI_ASSOC);
     $apps->close();
@@ -415,7 +440,7 @@ switch ($action) {
       fail('email is required');
     }
 
-    $stmt = db()->prepare('SELECT id, display_name FROM users WHERE username = ?');
+    $stmt = db()->prepare('SELECT id, display_name, password_hash FROM users WHERE username = ?');
     $stmt->bind_param('s', $email);
     $stmt->execute();
     $user = $stmt->get_result()->fetch_assoc();
@@ -424,7 +449,12 @@ switch ($action) {
     if (!$user) {
       respond(['found' => false]);
     }
-    respond(['found' => true, 'userId' => (int)$user['id'], 'displayName' => $user['display_name']]);
+    respond([
+      'found' => true,
+      'userId' => (int)$user['id'],
+      'displayName' => $user['display_name'],
+      'activated' => $user['password_hash'] !== null,
+    ]);
   }
 
   // Every app in the system, with no per-user grant info — used to build
@@ -442,12 +472,14 @@ switch ($action) {
     ], $rows)]);
   }
 
-  // Body: { email, appIds: [...] }. Refuses to re-invite an email that
-  // already has an account (they should just be granted access directly,
-  // via adminSaveAccess after an adminLookupUser find). Sending to an email
-  // with an existing *pending* invitation updates and resends it instead of
-  // failing — same action doubles as "resend," with a fresh token/expiry
-  // and whatever app selection was just submitted.
+  // Body: { email, appIds: [...] }. The account and its app_access grants
+  // are created for real right now, not deferred until the invitee signs
+  // up — password_hash stays NULL until they do (see the `login`/`signup`
+  // handling of that). Sending to an email that's already fully activated
+  // (has a password) is refused; sending to one that's already invited but
+  // not yet activated re-syncs its grants to whatever's checked now and
+  // resends the email with a fresh token/expiry — this one action doubles
+  // as "resend."
   case 'adminSendInvitation': {
     $admin = requireAdmin();
     $body = jsonBody();
@@ -458,69 +490,83 @@ switch ($action) {
       fail('A valid email address is required');
     }
 
-    $stmt = db()->prepare('SELECT id FROM users WHERE username = ?');
+    $stmt = db()->prepare('SELECT id, password_hash FROM users WHERE username = ?');
     $stmt->bind_param('s', $email);
     $stmt->execute();
-    if ($stmt->get_result()->fetch_row()) {
-      $stmt->close();
-      fail('An account with that email already exists — grant access directly instead', 409);
-    }
+    $existing = $stmt->get_result()->fetch_assoc();
     $stmt->close();
 
-    $token = bin2hex(random_bytes(32));
-
-    $pending = db()->prepare(
-      'SELECT id FROM invitations WHERE email = ? AND accepted_at IS NULL'
-    );
-    $pending->bind_param('s', $email);
-    $pending->execute();
-    $existing = $pending->get_result()->fetch_assoc();
-    $pending->close();
+    if ($existing && $existing['password_hash'] !== null) {
+      fail('An account with that email already exists — grant access directly instead', 409);
+    }
 
     if ($existing) {
-      $invitationId = (int)$existing['id'];
-      $upd = db()->prepare(
-        'UPDATE invitations SET token = ?, invited_by = ?, expires_at = DATE_ADD(NOW(), INTERVAL 14 DAY) WHERE id = ?'
-      );
-      $upd->bind_param('sii', $token, $admin['id'], $invitationId);
-      $upd->execute();
-      $upd->close();
-
-      $clear = db()->prepare('DELETE FROM invitation_apps WHERE invitation_id = ?');
-      $clear->bind_param('i', $invitationId);
-      $clear->execute();
-      $clear->close();
+      $userId = (int)$existing['id'];
     } else {
-      $ins = db()->prepare(
-        'INSERT INTO invitations (email, token, invited_by, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 14 DAY))'
-      );
-      $ins->bind_param('ssi', $email, $token, $admin['id']);
+      $ins = db()->prepare('INSERT INTO users (username, password_hash, display_name) VALUES (?, NULL, NULL)');
+      $ins->bind_param('s', $email);
       $ins->execute();
-      $invitationId = $ins->insert_id;
+      $userId = $ins->insert_id;
       $ins->close();
     }
 
-    $appNames = [];
-    if ($appIds) {
-      $link = db()->prepare('INSERT INTO invitation_apps (invitation_id, app_id) VALUES (?, ?)');
-      $nameStmt = db()->prepare('SELECT name FROM apps WHERE id = ?');
-      foreach ($appIds as $appId) {
-        if ($appId <= 0) {
-          continue;
-        }
-        $link->bind_param('ii', $invitationId, $appId);
-        $link->execute();
-
-        $nameStmt->bind_param('i', $appId);
-        $nameStmt->execute();
-        $row = $nameStmt->get_result()->fetch_assoc();
-        if ($row) {
-          $appNames[] = $row['name'];
-        }
+    // Sync app_access to exactly what's checked now — same insert/delete
+    // diff adminSaveAccess does, so this also works as a plain "adjust this
+    // pending invite's apps" action even without resending the email.
+    $allApps = db()->query('SELECT id FROM apps')->fetch_all(MYSQLI_ASSOC);
+    $checked = array_flip($appIds);
+    $insertGrant = db()->prepare(
+      'INSERT INTO app_access (user_id, app_id, can_edit) VALUES (?, ?, 1)
+       ON DUPLICATE KEY UPDATE can_edit = 1'
+    );
+    $deleteGrant = db()->prepare('DELETE FROM app_access WHERE user_id = ? AND app_id = ?');
+    foreach ($allApps as $a) {
+      $appId = (int)$a['id'];
+      if (isset($checked[$appId])) {
+        $insertGrant->bind_param('ii', $userId, $appId);
+        $insertGrant->execute();
+      } else {
+        $deleteGrant->bind_param('ii', $userId, $appId);
+        $deleteGrant->execute();
       }
-      $link->close();
-      $nameStmt->close();
     }
+    $insertGrant->close();
+    $deleteGrant->close();
+
+    // Refresh the pending invitation's token/expiry, or create one.
+    $token = bin2hex(random_bytes(32));
+    $pending = db()->prepare('SELECT id FROM invitations WHERE user_id = ? AND accepted_at IS NULL');
+    $pending->bind_param('i', $userId);
+    $pending->execute();
+    $pendingInvite = $pending->get_result()->fetch_assoc();
+    $pending->close();
+
+    if ($pendingInvite) {
+      $upd = db()->prepare(
+        'UPDATE invitations SET token = ?, invited_by = ?, expires_at = DATE_ADD(NOW(), INTERVAL 14 DAY) WHERE id = ?'
+      );
+      $upd->bind_param('sii', $token, $admin['id'], $pendingInvite['id']);
+      $upd->execute();
+      $upd->close();
+    } else {
+      $ins2 = db()->prepare(
+        'INSERT INTO invitations (email, user_id, token, invited_by, expires_at)
+         VALUES (?, ?, ?, ?, DATE_ADD(NOW(), INTERVAL 14 DAY))'
+      );
+      $ins2->bind_param('sisi', $email, $userId, $token, $admin['id']);
+      $ins2->execute();
+      $ins2->close();
+    }
+
+    // List whatever's actually granted now (app_access is the source of
+    // truth), not just what was passed in.
+    $nameStmt = db()->prepare(
+      'SELECT a.name FROM app_access aa JOIN apps a ON a.id = aa.app_id WHERE aa.user_id = ? ORDER BY a.name'
+    );
+    $nameStmt->bind_param('i', $userId);
+    $nameStmt->execute();
+    $appNames = array_map(fn($r) => $r['name'], $nameStmt->get_result()->fetch_all(MYSQLI_ASSOC));
+    $nameStmt->close();
 
     $link = SITE_URL . (strpos(SITE_URL, '?') !== false ? '&' : '?') . 'invite=' . $token;
     $appsList = $appNames ? implode(', ', $appNames) : '(no extra apps — just the public ones)';
@@ -533,7 +579,7 @@ switch ($action) {
       "If you weren't expecting this, you can safely ignore this email."
     );
 
-    respond(['success' => true]);
+    respond(['success' => true, 'userId' => $userId]);
   }
 
   // Every app in the system, with whether this specific user currently has

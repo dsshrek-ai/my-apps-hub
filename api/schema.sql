@@ -175,6 +175,10 @@ CREATE TABLE IF NOT EXISTS invitations (
   FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE SET NULL
 ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Superseded by the "pre-create the account at invite time" change further
+-- below (invitations now carries user_id and app_access is the source of
+-- truth for which apps an invitee gets) -- left in place harmlessly rather
+-- than dropped.
 CREATE TABLE IF NOT EXISTS invitation_apps (
   invitation_id  INT NOT NULL,
   app_id         INT NOT NULL,
@@ -182,6 +186,20 @@ CREATE TABLE IF NOT EXISTS invitation_apps (
   FOREIGN KEY (invitation_id) REFERENCES invitations(id) ON DELETE CASCADE,
   FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE
 ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------- SCHEMA CHANGE: pre-create the account at invite time ----------
+-- password_hash is now nullable: NULL means "invited but hasn't set a
+-- password yet" -- an account (and its app_access grants) that fully
+-- exists before the person has done anything. invitations gets a user_id
+-- so login can recognize "this account is pending activation" and find
+-- the still-valid invitation to auto-continue into, instead of just
+-- failing the login attempt outright.
+-- Run once.
+
+ALTER TABLE users MODIFY COLUMN password_hash VARCHAR(255) NULL;
+ALTER TABLE invitations ADD COLUMN user_id INT NULL AFTER email;
+ALTER TABLE invitations ADD CONSTRAINT fk_invitations_user
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
 
 -- ============================================================
 -- BOOTSTRAP: after you've signed up through the Hub, run this once

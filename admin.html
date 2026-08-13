@@ -115,6 +115,8 @@ const AUTH_KEY = 'appsHubAuth'; // shared with index.html on the same domain
 
 let auth = null;
 let currentUserId = null;
+let currentUserEmail = null;
+let currentUserActivated = true;
 let currentApps = []; // [{ appId, appKey, name, iconEmoji, isPublic, granted }]
 
 const loginCard = document.getElementById('loginCard');
@@ -197,7 +199,11 @@ async function lookupUser() {
       return;
     }
     currentUserId = data.userId;
-    msg.innerHTML = `<div class="success-msg">Found: ${escHtml(data.displayName || email)}</div>`;
+    currentUserEmail = email;
+    currentUserActivated = data.activated;
+    msg.innerHTML = data.activated
+      ? `<div class="success-msg">Found: ${escHtml(data.displayName || email)}</div>`
+      : `<div class="info-msg">Found: ${escHtml(email)} — invited, but hasn't set a password yet.</div>`;
     await loadAccessGrid();
   } catch (err) {
     if (/not authorized/i.test(err.message)) {
@@ -229,9 +235,33 @@ function renderAccessGrid() {
       </div>
     `).join('')}
     <button class="btn" id="saveAccessBtn" style="margin-top:1rem">Save</button>
+    ${!currentUserActivated ? `
+      <button class="btn" id="resendInviteBtn" style="margin-top:0.5rem;background:var(--warm-brown)">
+        Resend Invitation Email
+      </button>` : ''}
     <div id="saveMsg"></div>
   `;
   document.getElementById('saveAccessBtn').addEventListener('click', saveAccess);
+  if (!currentUserActivated) {
+    document.getElementById('resendInviteBtn').addEventListener('click', resendInvitation);
+  }
+}
+
+// Same action as sending a first invitation — it syncs app_access to
+// whatever's currently checked and sends a fresh activation email either
+// way, so this doubles as "save and resend" in one click.
+async function resendInvitation() {
+  const msg = document.getElementById('saveMsg');
+  const appIds = Array.from(accessCard.querySelectorAll('input[type="checkbox"]:checked'))
+    .map(cb => Number(cb.dataset.appId));
+  msg.innerHTML = '';
+  try {
+    await fetchJSON('adminSendInvitation', { method: 'POST', body: { email: currentUserEmail, appIds } });
+    msg.innerHTML = '<div class="success-msg">Invitation re-sent.</div>';
+    await loadAccessGrid();
+  } catch (err) {
+    msg.innerHTML = `<div class="error-msg">${escHtml(err.message)}</div>`;
+  }
 }
 
 async function saveAccess() {
@@ -286,8 +316,12 @@ async function sendInvitation(email) {
     .map(cb => Number(cb.dataset.appId));
   msg.innerHTML = '';
   try {
-    await fetchJSON('adminSendInvitation', { method: 'POST', body: { email, appIds } });
-    accessCard.innerHTML = `<div class="success-msg">Invitation sent to ${escHtml(email)}.</div>`;
+    const data = await fetchJSON('adminSendInvitation', { method: 'POST', body: { email, appIds } });
+    currentUserId = data.userId;
+    currentUserEmail = email;
+    currentUserActivated = false;
+    await loadAccessGrid();
+    document.getElementById('saveMsg').innerHTML = '<div class="success-msg">Invitation sent.</div>';
   } catch (err) {
     msg.innerHTML = `<div class="error-msg">${escHtml(err.message)}</div>`;
   }
