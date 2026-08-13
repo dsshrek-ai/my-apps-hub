@@ -444,9 +444,10 @@ switch ($action) {
 
   // Body: { email, appIds: [...] }. Refuses to re-invite an email that
   // already has an account (they should just be granted access directly,
-  // via adminSaveAccess after an adminLookupUser find) or one that already
-  // has a pending invitation (resend isn't supported yet — let the existing
-  // one expire, or extend this later).
+  // via adminSaveAccess after an adminLookupUser find). Sending to an email
+  // with an existing *pending* invitation updates and resends it instead of
+  // failing — same action doubles as "resend," with a fresh token/expiry
+  // and whatever app selection was just submitted.
   case 'adminSendInvitation': {
     $admin = requireAdmin();
     $body = jsonBody();
@@ -466,25 +467,38 @@ switch ($action) {
     }
     $stmt->close();
 
+    $token = bin2hex(random_bytes(32));
+
     $pending = db()->prepare(
-      'SELECT id FROM invitations WHERE email = ? AND expires_at > NOW() AND accepted_at IS NULL'
+      'SELECT id FROM invitations WHERE email = ? AND accepted_at IS NULL'
     );
     $pending->bind_param('s', $email);
     $pending->execute();
-    if ($pending->get_result()->fetch_row()) {
-      $pending->close();
-      fail('There\'s already a pending invitation for that email', 409);
-    }
+    $existing = $pending->get_result()->fetch_assoc();
     $pending->close();
 
-    $token = bin2hex(random_bytes(32));
-    $ins = db()->prepare(
-      'INSERT INTO invitations (email, token, invited_by, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 14 DAY))'
-    );
-    $ins->bind_param('ssi', $email, $token, $admin['id']);
-    $ins->execute();
-    $invitationId = $ins->insert_id;
-    $ins->close();
+    if ($existing) {
+      $invitationId = (int)$existing['id'];
+      $upd = db()->prepare(
+        'UPDATE invitations SET token = ?, invited_by = ?, expires_at = DATE_ADD(NOW(), INTERVAL 14 DAY) WHERE id = ?'
+      );
+      $upd->bind_param('sii', $token, $admin['id'], $invitationId);
+      $upd->execute();
+      $upd->close();
+
+      $clear = db()->prepare('DELETE FROM invitation_apps WHERE invitation_id = ?');
+      $clear->bind_param('i', $invitationId);
+      $clear->execute();
+      $clear->close();
+    } else {
+      $ins = db()->prepare(
+        'INSERT INTO invitations (email, token, invited_by, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 14 DAY))'
+      );
+      $ins->bind_param('ssi', $email, $token, $admin['id']);
+      $ins->execute();
+      $invitationId = $ins->insert_id;
+      $ins->close();
+    }
 
     $appNames = [];
     if ($appIds) {

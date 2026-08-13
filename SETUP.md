@@ -125,9 +125,12 @@ editing)` meaning as a normal grant) before anyone has signed up:
 4. An invite token only works once and only for its own email — if it's
    expired or already used, signup still works normally, it just won't have
    the "you're invited" banner or the automatic grants.
-5. There's no resend/revoke UI yet — sending a second invitation to an
-   email with one already pending is blocked; let the old one expire (or
-   delete its row directly in `invitations` via phpMyAdmin) before retrying.
+5. **Resending**: entering the same email again and clicking Send
+   Invitation updates the existing pending invitation (fresh token, fresh
+   14-day expiry, whatever app selection you just submitted) and re-sends
+   the email — the old link stops working. There's still no revoke UI; to
+   cancel an invitation outright, delete its row directly in `invitations`
+   via phpMyAdmin.
 
 ## Public apps with editors (`can_edit`)
 
