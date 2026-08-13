@@ -176,8 +176,9 @@ current session token appended to their URL
 (`https://.../?token=abc123...`), so a user who's already logged into the
 Hub doesn't have to log in again inside that app. Right now that's
 **T-Minus**, **Shed Inventory**, **PWI Weight Tracker**, **Choir Admin
-Panel**, **Senior Family Cookbook**, and **Living Lean** — the other apps
-that also live on MyDataWorld. For the two public cookbook apps, SSO
+Panel**, **SOJO Membership**, **Senior Family Cookbook**, and **Living
+Lean** — the other apps that also live on MyDataWorld. For the two public
+cookbook apps, SSO
 doesn't skip a login screen (they never had one to browse) — it just means
 a Hub-launched visit shows up already in edit mode if that account has
 `can_edit`, instead of needing to log in a second time inside the app to

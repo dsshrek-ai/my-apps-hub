@@ -78,7 +78,7 @@ ALTER TABLE apps ADD COLUMN sso_enabled      TINYINT(1) NOT NULL DEFAULT 0;
 INSERT INTO apps (app_key, name, is_public, description, icon_emoji, icon_color_class, launch_url, sso_enabled) VALUES
   ('sojo-membership', 'SOJO Membership', 0,
    'For tracking membership in the SOJO Choral Arts Group. Designed for section leaders.',
-   '🎵', 'icon-purple', 'https://dsshrek-ai.github.io/sojo-app/', 0),
+   '🎵', 'icon-purple', 'https://dsshrek-ai.github.io/sojo-app/', 1),
 
   ('south-jordan-choral-arts', 'South Jordan Choral Arts', 0,
    'The member site for South Jordan Choral Arts Community Choir — rehearsal schedule, lyrics by voice part, announcements, volunteer signups, and more.',
