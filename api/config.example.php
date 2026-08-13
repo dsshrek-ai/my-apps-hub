@@ -9,3 +9,12 @@ define('DB_PASS', 'PUT_YOUR_DB_PASSWORD_HERE');
 
 // How long a login session stays valid.
 define('SESSION_LIFETIME_DAYS', 30);
+
+// From: address for password-reset and invitation emails. Use an address at
+// your own domain — shared hosting mail() is more likely to get flagged as
+// spam if the From: domain doesn't match the sending server.
+define('FROM_EMAIL', 'noreply@seniorfamily.org');
+
+// Base URL of the deployed Hub page itself (not the API) — used to build
+// the clickable links in reset/invitation emails.
+define('SITE_URL', 'https://seniorfamily.org/my-apps-hub.html');

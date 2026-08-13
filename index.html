@@ -154,7 +154,10 @@ const AUTH_KEY = 'appsHubAuth';
 let auth = null;          // { token, displayName } | null
 let apps = [];             // apps visible to the current visitor
 let selectedAppKey = null; // which tab is active, or null (login card / placeholder)
-let authMode = 'login';    // 'login' | 'signup'
+let authMode = 'login';    // 'login' | 'signup' | 'forgot' | 'reset'
+let resetToken = null;     // set when the page loaded with ?resetToken=...
+let inviteToken = null;    // set when the page loaded with ?invite=...
+let inviteInfo = null;     // { email, invitedByName, apps: [...] } once fetched
 
 const accountBar = document.getElementById('accountBar');
 const tabsEl = document.getElementById('tabs');
@@ -226,6 +229,14 @@ function renderTabs() {
 }
 
 function renderMain() {
+  // A reset link should always show the reset form, even if this device
+  // already has a logged-in session for someone (possibly a different
+  // person, on a shared computer).
+  if (authMode === 'reset') {
+    renderAuthCard();
+    return;
+  }
+
   const selected = apps.find(a => a.appKey === selectedAppKey);
 
   if (selected) {
@@ -250,13 +261,20 @@ function renderMain() {
 
 function renderAuthCard() {
   if (authMode === 'signup') {
+    const invited = inviteInfo !== null;
     main.innerHTML = `
       <div class="content-card">
         <h2>Create an account</h2>
-        <div class="sub">Access more of your apps by signing up below.</div>
+        <div class="sub">
+          ${invited
+            ? `You've been invited by <strong>${escHtml(inviteInfo.invitedByName || 'Dennis Senior')}</strong> to join
+               ${inviteInfo.apps.length ? escHtml(inviteInfo.apps.map(a => a.name).join(', ')) : 'My Apps Hub'}.`
+            : 'Access more of your apps by signing up below.'}
+        </div>
         <div class="field">
           <label for="suEmail">Email</label>
-          <input type="email" id="suEmail" autocomplete="username" placeholder="you@example.com">
+          <input type="email" id="suEmail" autocomplete="username" placeholder="you@example.com"
+                 value="${escHtml(invited ? inviteInfo.email : '')}" ${invited ? 'readonly' : ''}>
         </div>
         <div class="field">
           <label for="suName">Your name</label>
@@ -278,6 +296,48 @@ function renderAuthCard() {
     return;
   }
 
+  if (authMode === 'forgot') {
+    main.innerHTML = `
+      <div class="content-card">
+        <h2>Reset your password</h2>
+        <div class="sub">Enter your email and we'll send you a link to choose a new password.</div>
+        <div class="field">
+          <label for="fpEmail">Email</label>
+          <input type="email" id="fpEmail" autocomplete="username" placeholder="you@example.com">
+        </div>
+        <button class="btn" id="fpBtn">Send reset link</button>
+        <div class="form-links" style="justify-content:center">
+          <a id="toLogin">Back to sign in</a>
+        </div>
+        <div id="authMsg"></div>
+      </div>`;
+    document.getElementById('fpBtn').addEventListener('click', attemptForgotPassword);
+    document.getElementById('fpEmail').addEventListener('keydown', e => { if (e.key === 'Enter') attemptForgotPassword(); });
+    document.getElementById('toLogin').addEventListener('click', () => { authMode = 'login'; render(); });
+    return;
+  }
+
+  if (authMode === 'reset') {
+    main.innerHTML = `
+      <div class="content-card">
+        <h2>Choose a new password</h2>
+        <div class="sub">Enter a new password for your account below.</div>
+        <div class="field">
+          <label for="rpPw">New password (min. 8 characters)</label>
+          <input type="password" id="rpPw" autocomplete="new-password">
+        </div>
+        <div class="field">
+          <label for="rpPw2">Confirm new password</label>
+          <input type="password" id="rpPw2" autocomplete="new-password">
+        </div>
+        <button class="btn" id="rpBtn">Set new password</button>
+        <div id="authMsg"></div>
+      </div>`;
+    document.getElementById('rpBtn').addEventListener('click', attemptResetPassword);
+    document.getElementById('rpPw2').addEventListener('keydown', e => { if (e.key === 'Enter') attemptResetPassword(); });
+    return;
+  }
+
   main.innerHTML = `
     <div class="content-card">
       <h2>Sign in to your apps</h2>
@@ -291,7 +351,7 @@ function renderAuthCard() {
         <input type="password" id="liPw" autocomplete="current-password">
       </div>
       <div class="form-links">
-        <a id="toSignupFromForgot">Forgot password?</a>
+        <a id="toForgot">Forgot password?</a>
         <a id="toSignup">Register for a password</a>
       </div>
       <button class="btn" id="liBtn">Sign In</button>
@@ -304,10 +364,7 @@ function renderAuthCard() {
   document.getElementById('liPw').addEventListener('keydown', e => { if (e.key === 'Enter') attemptLogin(); });
   document.getElementById('createAcctBtn').addEventListener('click', () => { authMode = 'signup'; render(); });
   document.getElementById('toSignup').addEventListener('click', () => { authMode = 'signup'; render(); });
-  document.getElementById('toSignupFromForgot').addEventListener('click', () => {
-    document.getElementById('authMsg').innerHTML =
-      '<div class="error-msg">No self-serve password reset yet — contact Dennis.</div>';
-  });
+  document.getElementById('toForgot').addEventListener('click', () => { authMode = 'forgot'; render(); });
 }
 
 // ── auth actions ─────────────────────────────────────────────────────────
@@ -342,11 +399,61 @@ async function attemptSignup() {
   }
   msg.innerHTML = '';
   try {
-    const data = await fetchJSON('signup', { method: 'POST', body: { email, password, displayName } });
+    const data = await fetchJSON('signup', {
+      method: 'POST', body: { email, password, displayName, inviteToken: inviteToken || undefined }
+    });
     auth = { token: data.token, displayName: data.displayName || email };
     saveAuth(auth);
     selectedAppKey = null;
+    inviteToken = null;
+    inviteInfo = null;
     await loadApps();
+  } catch (err) {
+    msg.innerHTML = `<div class="error-msg">${escHtml(err.message)}</div>`;
+  }
+}
+
+async function attemptForgotPassword() {
+  const email = document.getElementById('fpEmail').value.trim();
+  const msg = document.getElementById('authMsg');
+  if (!email) {
+    msg.innerHTML = '<div class="error-msg">Enter your email.</div>';
+    return;
+  }
+  msg.innerHTML = '';
+  try {
+    await fetchJSON('requestPasswordReset', { method: 'POST', body: { email } });
+    msg.innerHTML = '<div class="sub" style="margin-top:0.75rem">If that email has an account, a reset link is on its way — check your inbox.</div>';
+  } catch (err) {
+    msg.innerHTML = `<div class="error-msg">${escHtml(err.message)}</div>`;
+  }
+}
+
+async function attemptResetPassword() {
+  const password = document.getElementById('rpPw').value;
+  const password2 = document.getElementById('rpPw2').value;
+  const msg = document.getElementById('authMsg');
+  if (password.length < 8) {
+    msg.innerHTML = '<div class="error-msg">Password must be at least 8 characters.</div>';
+    return;
+  }
+  if (password !== password2) {
+    msg.innerHTML = '<div class="error-msg">Passwords don\'t match.</div>';
+    return;
+  }
+  msg.innerHTML = '';
+  try {
+    const data = await fetchJSON('resetPassword', { method: 'POST', body: { token: resetToken, password } });
+    resetToken = null;
+    authMode = 'login';
+    // Force the login screen even if this device had a (possibly different)
+    // saved session — otherwise renderMain() would show "pick an app" instead.
+    clearAuth();
+    auth = null;
+    render();
+    document.getElementById('liEmail').value = data.username || '';
+    document.getElementById('authMsg').innerHTML =
+      '<div class="sub" style="margin-top:0.75rem">Password updated — sign in below.</div>';
   } catch (err) {
     msg.innerHTML = `<div class="error-msg">${escHtml(err.message)}</div>`;
   }
@@ -380,6 +487,36 @@ function escHtml(str) {
 if (API_URL.includes('YOUR_DOMAIN')) {
   document.body.innerHTML = '<div class="error-msg" style="margin:24px">Set API_URL in index.html to your deployed api.php URL.</div>';
 } else {
+  const params = new URLSearchParams(window.location.search);
+  const rt = params.get('resetToken');
+  const inv = params.get('invite');
+
+  if (rt) {
+    resetToken = rt;
+    authMode = 'reset';
+    window.history.replaceState({}, document.title, window.location.pathname);
+  } else if (inv) {
+    inviteToken = inv;
+    authMode = 'signup';
+    // An invitation link means "sign up as this person" — don't let some
+    // other already-logged-in session on this device (e.g. a shared family
+    // computer) silently swallow it into "pick an app" instead.
+    clearAuth();
+    auth = null;
+    window.history.replaceState({}, document.title, window.location.pathname);
+    // Fire-and-forget: if this fails (expired/bad link), signup just shows
+    // its normal generic copy instead of the "you've been invited" banner.
+    fetch(`${API_URL}?action=getInvitation&token=${encodeURIComponent(inviteToken)}`)
+      .then(res => res.json())
+      .then(data => {
+        if (!data.error) {
+          inviteInfo = data;
+          if (authMode === 'signup') render();
+        }
+      })
+      .catch(() => {});
+  }
+
   auth = loadAuth();
   loadApps();
 }

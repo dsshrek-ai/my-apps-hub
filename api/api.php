@@ -54,6 +54,13 @@ function jsonBody(): array {
   return is_array($decoded) ? $decoded : [];
 }
 
+// Best-effort — a failed send here should never surface as an API error the
+// caller has to handle (there's nothing they could do about it anyway).
+function sendMail(string $to, string $subject, string $body): void {
+  $headers = 'From: ' . FROM_EMAIL . "\r\n";
+  @mail($to, $subject, $body, $headers);
+}
+
 // ---- Auth helpers ----
 
 // Like requireUser, but returns null instead of failing when there's no (or
@@ -157,6 +164,39 @@ switch ($action) {
     $sess->execute();
     $sess->close();
 
+    // Redeem a pending invitation, if this signup arrived via its emailed
+    // link — grants whatever apps the admin picked, then marks it used.
+    // A missing/expired/mismatched invite token never blocks signup itself;
+    // the account is still created either way.
+    $inviteToken = trim((string)($body['inviteToken'] ?? ''));
+    if ($inviteToken !== '') {
+      $inv = db()->prepare(
+        'SELECT id FROM invitations
+         WHERE token = ? AND email = ? AND expires_at > NOW() AND accepted_at IS NULL'
+      );
+      $inv->bind_param('ss', $inviteToken, $email);
+      $inv->execute();
+      $invitation = $inv->get_result()->fetch_assoc();
+      $inv->close();
+
+      if ($invitation) {
+        $invitationId = (int)$invitation['id'];
+        $grant = db()->prepare(
+          'INSERT INTO app_access (user_id, app_id, can_edit)
+           SELECT ?, app_id, 1 FROM invitation_apps WHERE invitation_id = ?
+           ON DUPLICATE KEY UPDATE can_edit = 1'
+        );
+        $grant->bind_param('ii', $userId, $invitationId);
+        $grant->execute();
+        $grant->close();
+
+        $markUsed = db()->prepare('UPDATE invitations SET accepted_at = NOW() WHERE id = ?');
+        $markUsed->bind_param('i', $invitationId);
+        $markUsed->execute();
+        $markUsed->close();
+      }
+    }
+
     respond(['token' => $token, 'displayName' => $displayName ?: $email]);
   }
 
@@ -200,6 +240,128 @@ switch ($action) {
       $stmt->close();
     }
     respond(['success' => true]);
+  }
+
+  // Always responds success, whether or not the email exists — otherwise
+  // this endpoint would let anyone check which emails have accounts here.
+  case 'requestPasswordReset': {
+    $body = jsonBody();
+    $email = trim((string)($body['email'] ?? ''));
+    if ($email === '') {
+      fail('Email is required');
+    }
+
+    $stmt = db()->prepare('SELECT id FROM users WHERE username = ?');
+    $stmt->bind_param('s', $email);
+    $stmt->execute();
+    $user = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if ($user) {
+      $token = bin2hex(random_bytes(32));
+      $ins = db()->prepare(
+        'INSERT INTO password_resets (token, user_id, expires_at) VALUES (?, ?, DATE_ADD(NOW(), INTERVAL 1 HOUR))'
+      );
+      $ins->bind_param('si', $token, $user['id']);
+      $ins->execute();
+      $ins->close();
+
+      $link = SITE_URL . (strpos(SITE_URL, '?') !== false ? '&' : '?') . 'resetToken=' . $token;
+      sendMail(
+        $email,
+        'Reset your My Apps Hub password',
+        "We received a request to reset your My Apps Hub password.\n\n" .
+        "Click the link below to choose a new password (this link expires in 1 hour):\n$link\n\n" .
+        "If you didn't request this, you can safely ignore this email — your password won't change unless you click the link above."
+      );
+    }
+
+    respond(['success' => true]);
+  }
+
+  case 'resetPassword': {
+    $body = jsonBody();
+    $token = trim((string)($body['token'] ?? ''));
+    $password = (string)($body['password'] ?? '');
+    if ($token === '') {
+      fail('Reset link is missing its token');
+    }
+    if (strlen($password) < 8) {
+      fail('Password must be at least 8 characters');
+    }
+
+    $stmt = db()->prepare(
+      'SELECT pr.user_id, u.username FROM password_resets pr
+       JOIN users u ON u.id = pr.user_id
+       WHERE pr.token = ? AND pr.expires_at > NOW()'
+    );
+    $stmt->bind_param('s', $token);
+    $stmt->execute();
+    $reset = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$reset) {
+      fail('This reset link is invalid or has expired — request a new one', 400);
+    }
+
+    $hash = password_hash($password, PASSWORD_DEFAULT);
+    $upd = db()->prepare('UPDATE users SET password_hash = ? WHERE id = ?');
+    $upd->bind_param('si', $hash, $reset['user_id']);
+    $upd->execute();
+    $upd->close();
+
+    // Used tokens shouldn't work twice, and a password reset is a
+    // reasonable moment to sign every device back out.
+    $del = db()->prepare('DELETE FROM password_resets WHERE user_id = ?');
+    $del->bind_param('i', $reset['user_id']);
+    $del->execute();
+    $del->close();
+
+    $delSessions = db()->prepare('DELETE FROM sessions WHERE user_id = ?');
+    $delSessions->bind_param('i', $reset['user_id']);
+    $delSessions->execute();
+    $delSessions->close();
+
+    respond(['success' => true, 'username' => $reset['username']]);
+  }
+
+  // Public (the token itself is the credential) — lets the signup page show
+  // who invited this person and which apps before they've created an account.
+  case 'getInvitation': {
+    $token = trim((string)($_GET['token'] ?? ''));
+    if ($token === '') {
+      fail('token is required');
+    }
+
+    $stmt = db()->prepare(
+      'SELECT i.id, i.email, u.display_name AS invited_by_name
+       FROM invitations i
+       LEFT JOIN users u ON u.id = i.invited_by
+       WHERE i.token = ? AND i.expires_at > NOW() AND i.accepted_at IS NULL'
+    );
+    $stmt->bind_param('s', $token);
+    $stmt->execute();
+    $invitation = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$invitation) {
+      fail('This invitation is invalid or has expired', 404);
+    }
+
+    $apps = db()->prepare(
+      'SELECT a.name, a.icon_emoji FROM invitation_apps ia
+       JOIN apps a ON a.id = ia.app_id WHERE ia.invitation_id = ? ORDER BY a.name'
+    );
+    $apps->bind_param('i', $invitation['id']);
+    $apps->execute();
+    $appRows = $apps->get_result()->fetch_all(MYSQLI_ASSOC);
+    $apps->close();
+
+    respond([
+      'email' => $invitation['email'],
+      'invitedByName' => $invitation['invited_by_name'],
+      'apps' => array_map(fn($r) => ['name' => $r['name'], 'iconEmoji' => $r['icon_emoji']], $appRows),
+    ]);
   }
 
   // Every app the current visitor is allowed to see: all public apps, plus
@@ -263,6 +425,101 @@ switch ($action) {
       respond(['found' => false]);
     }
     respond(['found' => true, 'userId' => (int)$user['id'], 'displayName' => $user['display_name']]);
+  }
+
+  // Every app in the system, with no per-user grant info — used to build
+  // the checkbox grid for inviting someone who doesn't have an account yet.
+  case 'adminAppList': {
+    requireAdmin();
+    $rows = db()->query('SELECT id AS app_id, app_key, name, icon_emoji, is_public FROM apps ORDER BY name')
+      ->fetch_all(MYSQLI_ASSOC);
+    respond(['apps' => array_map(fn($r) => [
+      'appId' => (int)$r['app_id'],
+      'appKey' => $r['app_key'],
+      'name' => $r['name'],
+      'iconEmoji' => $r['icon_emoji'],
+      'isPublic' => (bool)$r['is_public'],
+    ], $rows)]);
+  }
+
+  // Body: { email, appIds: [...] }. Refuses to re-invite an email that
+  // already has an account (they should just be granted access directly,
+  // via adminSaveAccess after an adminLookupUser find) or one that already
+  // has a pending invitation (resend isn't supported yet — let the existing
+  // one expire, or extend this later).
+  case 'adminSendInvitation': {
+    $admin = requireAdmin();
+    $body = jsonBody();
+    $email = trim((string)($body['email'] ?? ''));
+    $appIds = is_array($body['appIds'] ?? null) ? array_map('intval', $body['appIds']) : [];
+
+    if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
+      fail('A valid email address is required');
+    }
+
+    $stmt = db()->prepare('SELECT id FROM users WHERE username = ?');
+    $stmt->bind_param('s', $email);
+    $stmt->execute();
+    if ($stmt->get_result()->fetch_row()) {
+      $stmt->close();
+      fail('An account with that email already exists — grant access directly instead', 409);
+    }
+    $stmt->close();
+
+    $pending = db()->prepare(
+      'SELECT id FROM invitations WHERE email = ? AND expires_at > NOW() AND accepted_at IS NULL'
+    );
+    $pending->bind_param('s', $email);
+    $pending->execute();
+    if ($pending->get_result()->fetch_row()) {
+      $pending->close();
+      fail('There\'s already a pending invitation for that email', 409);
+    }
+    $pending->close();
+
+    $token = bin2hex(random_bytes(32));
+    $ins = db()->prepare(
+      'INSERT INTO invitations (email, token, invited_by, expires_at) VALUES (?, ?, ?, DATE_ADD(NOW(), INTERVAL 14 DAY))'
+    );
+    $ins->bind_param('ssi', $email, $token, $admin['id']);
+    $ins->execute();
+    $invitationId = $ins->insert_id;
+    $ins->close();
+
+    $appNames = [];
+    if ($appIds) {
+      $link = db()->prepare('INSERT INTO invitation_apps (invitation_id, app_id) VALUES (?, ?)');
+      $nameStmt = db()->prepare('SELECT name FROM apps WHERE id = ?');
+      foreach ($appIds as $appId) {
+        if ($appId <= 0) {
+          continue;
+        }
+        $link->bind_param('ii', $invitationId, $appId);
+        $link->execute();
+
+        $nameStmt->bind_param('i', $appId);
+        $nameStmt->execute();
+        $row = $nameStmt->get_result()->fetch_assoc();
+        if ($row) {
+          $appNames[] = $row['name'];
+        }
+      }
+      $link->close();
+      $nameStmt->close();
+    }
+
+    $link = SITE_URL . (strpos(SITE_URL, '?') !== false ? '&' : '?') . 'invite=' . $token;
+    $appsList = $appNames ? implode(', ', $appNames) : '(no extra apps — just the public ones)';
+    sendMail(
+      $email,
+      "You're invited to My Apps Hub",
+      "You've been invited to join My Apps Hub at SeniorFamily.org by " . ($admin['display_name'] ?: 'Dennis Senior') . ".\n\n" .
+      "Click the link below to create your login:\n$link\n\n" .
+      "Apps you've been invited to: $appsList\n\n" .
+      "If you weren't expecting this, you can safely ignore this email."
+    );
+
+    respond(['success' => true]);
   }
 
   // Every app in the system, with whether this specific user currently has

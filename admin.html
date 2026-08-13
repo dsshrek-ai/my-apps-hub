@@ -189,7 +189,11 @@ async function lookupUser() {
   try {
     const data = await fetchJSON('adminLookupUser', { params: { email } });
     if (!data.found) {
-      msg.innerHTML = '<div class="info-msg">No account exists yet for that email. Enter a different one, or have them sign up through the Hub first.</div>';
+      msg.innerHTML = `
+        <div class="info-msg">No account exists yet for that email.</div>
+        <button class="btn" id="inviteBtn" style="margin-top:0.75rem">Send Invitation</button>
+      `;
+      document.getElementById('inviteBtn').addEventListener('click', () => renderInviteGrid(email));
       return;
     }
     currentUserId = data.userId;
@@ -241,6 +245,49 @@ async function saveAccess() {
     await fetchJSON('adminSaveAccess', { method: 'POST', body: { userId: currentUserId, grants } });
     msg.innerHTML = '<div class="success-msg">Saved.</div>';
     await loadAccessGrid();
+  } catch (err) {
+    msg.innerHTML = `<div class="error-msg">${escHtml(err.message)}</div>`;
+  }
+}
+
+// ── invitations (for an email with no account yet) ─────────────────────────
+async function renderInviteGrid(email) {
+  accessCard.classList.remove('hidden');
+  accessCard.innerHTML = `<div class="status-msg" style="text-align:center;color:var(--text-muted)">Loading apps…</div>`;
+  let apps;
+  try {
+    const data = await fetchJSON('adminAppList');
+    apps = data.apps;
+  } catch (err) {
+    accessCard.innerHTML = `<div class="error-msg">${escHtml(err.message)}</div>`;
+    return;
+  }
+
+  accessCard.innerHTML = `
+    <p class="user-found">Inviting <strong>${escHtml(email)}</strong> — pick which apps to grant in
+      addition to whatever's already public:</p>
+    ${apps.map(a => `
+      <div class="app-row">
+        <input type="checkbox" data-app-id="${a.appId}">
+        <span class="emoji">${a.iconEmoji || '📦'}</span>
+        <span class="name">${escHtml(a.name)}</span>
+        ${a.isPublic ? '<span class="public-tag">(Public — box grants editing)</span>' : ''}
+      </div>
+    `).join('')}
+    <button class="btn" id="sendInviteBtn" style="margin-top:1rem">Send Invitation</button>
+    <div id="inviteMsg"></div>
+  `;
+  document.getElementById('sendInviteBtn').addEventListener('click', () => sendInvitation(email));
+}
+
+async function sendInvitation(email) {
+  const msg = document.getElementById('inviteMsg');
+  const appIds = Array.from(accessCard.querySelectorAll('input[type="checkbox"]:checked'))
+    .map(cb => Number(cb.dataset.appId));
+  msg.innerHTML = '';
+  try {
+    await fetchJSON('adminSendInvitation', { method: 'POST', body: { email, appIds } });
+    accessCard.innerHTML = `<div class="success-msg">Invitation sent to ${escHtml(email)}.</div>`;
   } catch (err) {
     msg.innerHTML = `<div class="error-msg">${escHtml(err.message)}</div>`;
   }

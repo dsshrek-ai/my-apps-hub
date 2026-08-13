@@ -18,7 +18,9 @@ rows for all 15 current apps with the public/private list you gave me.
 
 1. Copy `api/config.example.php` to `api/config.php` and fill in the real
    `DB_NAME`, `DB_USER`, `DB_PASS` — same credentials as your other
-   MyDataWorld apps.
+   MyDataWorld apps — plus `FROM_EMAIL` (the address password-reset and
+   invitation emails come from) and `SITE_URL` (the Hub's own public URL,
+   used to build the links in those emails).
 2. Upload the whole `api/` folder via FTP/File Manager — e.g.
    `seniorfamily.org/my-apps-hub-api/`.
 
@@ -49,6 +51,23 @@ apps do.
    in one shot, or open `admin.html` and check the boxes yourself now that
    you're an admin. Either way — otherwise you'd be locked out of your own
    apps on day one.
+
+## Password reset
+
+"Forgot password?" on the login screen now actually works: it emails a
+one-time link (`index.html?resetToken=<token>`, valid for 1 hour) to set a
+new password. A few things worth knowing:
+
+- It always says "if that email has an account, a reset link is on its
+  way," whether or not the email is registered — so the form can't be used
+  to check who has an account here.
+- Setting a new password signs every device out (deletes all of that
+  user's sessions) — a reasonable default for "something's wrong enough
+  with my password that I need a new one."
+- This depends on `mail()` actually working on your host — same caveat as
+  Choir Admin Panel's absence-notification email. If a reset email never
+  arrives, check your host's mail logs before assuming the code is at
+  fault.
 
 ## Adding another person (via the Admin Tool)
 
@@ -83,9 +102,32 @@ To grant someone access to a normal app:
      here grants **edit** rights specifically (see "Public apps with
      editors" below). Those are marked `(Public — box grants editing)` in
      the list so it's not ambiguous which kind of grant you're making.
-3. If the email isn't found yet, the tool tells you so and lets you search
-   again — it never creates an account for someone; they have to sign up
-   themselves first.
+3. If the email isn't found yet, the tool offers to **send an invitation**
+   instead — see below.
+
+## Inviting someone who doesn't have an account yet
+
+If `adminLookupUser` comes back empty, `admin.html` shows a **Send
+Invitation** button instead of the access grid. Clicking it lets you pick
+which apps to grant (same checkbox list, same `(Public — box grants
+editing)` meaning as a normal grant) before anyone has signed up:
+
+1. Enter their email, click **Send Invitation** when the "no account"
+   message appears, check whichever apps they should have, and send.
+2. This creates a row in `invitations` (14-day expiry) plus one
+   `invitation_apps` row per app you checked, and emails them a link
+   (`index.html?invite=<token>`).
+3. Their signup screen shows who invited them and which apps, with the
+   email field pre-filled and locked to the invited address. The moment
+   they finish signing up, the invited apps are granted (`can_edit = 1`)
+   automatically and the invitation is marked accepted — no separate trip
+   to the admin tool needed afterward.
+4. An invite token only works once and only for its own email — if it's
+   expired or already used, signup still works normally, it just won't have
+   the "you're invited" banner or the automatic grants.
+5. There's no resend/revoke UI yet — sending a second invitation to an
+   email with one already pending is blocked; let the old one expire (or
+   delete its row directly in `invitations` via phpMyAdmin) before retrying.
 
 ## Public apps with editors (`can_edit`)
 

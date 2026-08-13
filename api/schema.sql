@@ -148,6 +148,41 @@ ON DUPLICATE KEY UPDATE
   launch_url       = VALUES(launch_url),
   sso_enabled      = VALUES(sso_enabled);
 
+-- ---------- SCHEMA CHANGE: self-serve password reset ----------
+
+CREATE TABLE IF NOT EXISTS password_resets (
+  token       CHAR(64) PRIMARY KEY,
+  user_id     INT NOT NULL,
+  created_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  expires_at  TIMESTAMP NOT NULL,
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------- SCHEMA CHANGE: admin-sent invitations ----------
+-- An invitation reserves a set of app grants for an email address that
+-- hasn't signed up yet. invitation_apps lists which apps (beyond whatever's
+-- already public) the invitee will be granted (can_edit = 1) the moment
+-- they complete signup via the emailed link.
+
+CREATE TABLE IF NOT EXISTS invitations (
+  id           INT AUTO_INCREMENT PRIMARY KEY,
+  email        VARCHAR(100) NOT NULL,
+  token        CHAR(64) NOT NULL UNIQUE,
+  invited_by   INT NULL,
+  created_at   TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  expires_at   TIMESTAMP NOT NULL,
+  accepted_at  TIMESTAMP NULL,
+  FOREIGN KEY (invited_by) REFERENCES users(id) ON DELETE SET NULL
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS invitation_apps (
+  invitation_id  INT NOT NULL,
+  app_id         INT NOT NULL,
+  PRIMARY KEY (invitation_id, app_id),
+  FOREIGN KEY (invitation_id) REFERENCES invitations(id) ON DELETE CASCADE,
+  FOREIGN KEY (app_id) REFERENCES apps(id) ON DELETE CASCADE
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- ============================================================
 -- BOOTSTRAP: after you've signed up through the Hub, run this once
 -- (replace the email) to grant yourself every private app so you're not
