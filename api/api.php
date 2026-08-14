@@ -56,9 +56,47 @@ function jsonBody(): array {
 
 // Best-effort — a failed send here should never surface as an API error the
 // caller has to handle (there's nothing they could do about it anyway).
+// Sent through Brevo's HTTP API rather than SMTP — Turbify transparently
+// redirects outbound SMTP connections to its own mail server regardless of
+// destination (confirmed by a TLS certificate mismatch: smtp.gmail.com's
+// certificate never showed up, cpanel353-az.turbify.biz's did instead), so
+// any SMTP-based approach is a dead end on this host. Brevo's API is plain
+// HTTPS, unaffected by that redirect.
 function sendMail(string $to, string $subject, string $body): void {
-  $headers = 'From: ' . FROM_EMAIL . "\r\n";
-  @mail($to, $subject, $body, $headers);
+  $payload = json_encode([
+    'sender'      => ['email' => FROM_EMAIL],
+    'to'          => [['email' => $to]],
+    'subject'     => $subject,
+    'textContent' => $body,
+  ]);
+
+  $ch = curl_init('https://api.brevo.com/v3/smtp/email');
+  curl_setopt_array($ch, [
+    CURLOPT_POST           => true,
+    CURLOPT_POSTFIELDS     => $payload,
+    CURLOPT_HTTPHEADER     => [
+      'accept: application/json',
+      'content-type: application/json',
+      'api-key: ' . BREVO_API_KEY,
+    ],
+    CURLOPT_RETURNTRANSFER => true,
+    CURLOPT_TIMEOUT        => 15,
+  ]);
+  $response = curl_exec($ch);
+  $status   = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+  $curlErr  = curl_error($ch);
+  curl_close($ch);
+
+  if ($status >= 200 && $status < 300) {
+    return;
+  }
+
+  // error_log()'s actual destination varies by host and has been hard to
+  // locate here — this file gives us one guaranteed, known place to look.
+  $line = date('c') . " sendMail to $to failed (HTTP $status): " .
+    ($curlErr !== '' ? $curlErr : $response) . "\n";
+  error_log('my-apps-hub sendMail failed: ' . $line);
+  @file_put_contents(__DIR__ . '/mail_debug.log', $line, FILE_APPEND);
 }
 
 // ---- Auth helpers ----

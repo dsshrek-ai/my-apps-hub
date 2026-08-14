@@ -2,6 +2,10 @@
   Require all denied
 </Files>
 
+<Files "*.log">
+  Require all denied
+</Files>
+
 <Files "config.example.php">
   Require all denied
 </Files>

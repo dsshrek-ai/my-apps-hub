@@ -18,9 +18,12 @@ rows for all 15 current apps with the public/private list you gave me.
 
 1. Copy `api/config.example.php` to `api/config.php` and fill in the real
    `DB_NAME`, `DB_USER`, `DB_PASS` — same credentials as your other
-   MyDataWorld apps — plus `FROM_EMAIL` (the address password-reset and
-   invitation emails come from) and `SITE_URL` (the Hub's own public URL,
-   used to build the links in those emails).
+   MyDataWorld apps — plus `SITE_URL` (the Hub's own public URL, used to
+   build the links in reset/invitation emails) and what those emails send
+   through: `BREVO_API_KEY` (sign up free at brevo.com, verify a sender
+   under Settings -> Senders, Domains & Dedicated IPs, then generate a key
+   under Settings -> SMTP & API -> API Keys) and `FROM_EMAIL` (must be the
+   address you verified as a sender in Brevo).
 2. Upload the whole `api/` folder via FTP/File Manager — e.g.
    `seniorfamily.org/my-apps-hub-api/`.
 
