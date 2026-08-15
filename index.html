@@ -58,6 +58,7 @@
 
   /* Tabs */
   .tabs { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin: 1.5rem 0; }
+  .tabs-divider { flex-basis: 100%; height: 1px; background: var(--border); margin: 4px 0; }
   .tab-btn {
     display: inline-flex; align-items: center; gap: 6px;
     background: var(--card-bg); border: 1px solid var(--border); border-radius: 50px;
@@ -214,11 +215,18 @@ function renderAccountBar() {
 }
 
 function renderTabs() {
-  tabsEl.innerHTML = apps.map(a => `
+  const myApps = apps.filter(a => a.canEdit);
+  const publicApps = apps.filter(a => !a.canEdit);
+
+  const tabBtn = a => `
     <button class="tab-btn ${a.appKey === selectedAppKey ? 'active' : ''}" data-key="${a.appKey}">
       <span>${a.iconEmoji || '📦'}</span> ${escHtml(a.name)}
     </button>
-  `).join('');
+  `;
+
+  tabsEl.innerHTML = myApps.map(tabBtn).join('')
+    + (myApps.length && publicApps.length ? '<div class="tabs-divider"></div>' : '')
+    + publicApps.map(tabBtn).join('');
 
   tabsEl.querySelectorAll('.tab-btn').forEach(btn => {
     btn.addEventListener('click', () => {

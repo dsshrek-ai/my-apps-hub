@@ -436,7 +436,7 @@ switch ($action) {
     if ($user) {
       $stmt = db()->prepare(
         'SELECT DISTINCT a.app_key, a.name, a.description, a.icon_emoji, a.icon_color_class,
-                a.launch_url, a.is_public, a.sso_enabled
+                a.launch_url, a.is_public, a.sso_enabled, IFNULL(aa.can_edit, 0) AS can_edit
          FROM apps a
          LEFT JOIN app_access aa ON aa.app_id = a.id AND aa.user_id = ?
          WHERE a.is_public = 1 OR aa.user_id IS NOT NULL
@@ -465,6 +465,7 @@ switch ($action) {
         'launchUrl' => $r['launch_url'],
         'isPublic' => (bool)$r['is_public'],
         'ssoEnabled' => (bool)$r['sso_enabled'],
+        'canEdit' => (bool)($r['can_edit'] ?? false),
       ], $rows),
     ]);
   }
