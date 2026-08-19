@@ -84,7 +84,7 @@ INSERT INTO apps (app_key, name, is_public, description, icon_emoji, icon_color_
 
   ('south-jordan-choral-arts', 'SoJo Choral Arts Seasons Chorale', 0,
    'The member site for SOJO Choral Arts Seasons Chorale Choir — rehearsal schedule, announcements, volunteer signups, and more.',
-   '🎶', 'icon-blue', 'https://dsshrek-ai.github.io/SoJoMemberApp/', 0),
+   '🎶', 'icon-blue', 'https://dsshrek-ai.github.io/SoJoMemberApp/', 1),
 
   ('choir-admin-panel', 'Choir Admin Panel', 0,
    'Maintenance panel for the South Jordan Choral Arts site — add, edit, and delete schedule entries, songs, announcements, and more. For the director and section leaders.',
