@@ -1,7 +1,8 @@
 # My Apps Hub
 
-A single sign-in launcher for your personal apps. Public apps are visible
-to anyone; private apps only show up for people explicitly granted access.
+A single sign-in launcher for your personal apps. Every app — public or
+private — only shows up for people explicitly granted access; there's no
+more anonymous or "public, no grant needed" browsing.
 
 See [SETUP.md](SETUP.md) for deployment (database, API, granting access,
 and how single sign-on with other apps works).
@@ -35,16 +36,14 @@ and how single sign-on with other apps works).
 
 ## How access works
 
-- `apps.is_public` — `1` means visible to everyone, no login needed.
-- `app_access` — `(user_id, app_id)` grants a specific app to a specific
-  user. For a private app, no grant means no tile at all. For a public app,
-  a grant instead means **edit rights** on top of the access everyone
-  already has — see `can_edit` below.
-- `app_access.can_edit` — always `1` for private-app grants (no view/edit
-  split there yet). For a public app, this is the whole point of the grant:
-  everyone can use the app, only `can_edit = 1` users can edit its content.
-  See SETUP.md's "Public apps with editors" section — Senior Family
-  Cookbook and Living Lean are the current example of this.
+- `app_access` — `(user_id, app_id)`. No row means no tile at all, for any
+  app, public or private. A row is "Access": can see and use the app.
+- `app_access.can_edit` — a second tier on that same row: `0` = access
+  only, `1` = access + edit rights, for apps built to check it. Edit always
+  implies access. See SETUP.md's "Access and Edit, per app" section —
+  Senior Family Cookbook and Living Lean are the current example.
+- `apps.is_public` — purely descriptive now (shown as a `(Public)` tag in
+  `admin.html`); it no longer bypasses the `app_access` check.
 - `apps.sso_enabled` — apps that have been updated to accept a `?token=`
   handoff from the Hub, skipping their own login screen.
 - `users.is_admin` — required to use `admin.html`.

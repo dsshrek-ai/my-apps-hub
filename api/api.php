@@ -427,34 +427,32 @@ switch ($action) {
     ]);
   }
 
-  // Every app the current visitor is allowed to see: all public apps, plus
-  // (if logged in) any private app they've been explicitly granted. Works
-  // for anonymous visitors too — they just get the public list.
+  // Every app the current visitor has an explicit app_access grant for —
+  // access is now required for every app, public or private, so there's no
+  // more "public apps need no grant" branch. Anonymous visitors can never
+  // hold a grant (there's no user_id to attach one to), so they always get
+  // an empty list.
   case 'listApps': {
     $user = optionalUser();
 
-    if ($user) {
-      $stmt = db()->prepare(
-        'SELECT DISTINCT a.app_key, a.name, a.description, a.icon_emoji, a.icon_color_class,
-                a.launch_url, a.is_public, a.sso_enabled, IFNULL(aa.can_edit, 0) AS can_edit
-         FROM apps a
-         LEFT JOIN app_access aa ON aa.app_id = a.id AND aa.user_id = ?
-         WHERE a.is_public = 1 OR aa.user_id IS NOT NULL
-         ORDER BY a.name'
-      );
-      $stmt->bind_param('i', $user['id']);
-    } else {
-      $stmt = db()->prepare(
-        'SELECT app_key, name, description, icon_emoji, icon_color_class, launch_url, is_public, sso_enabled
-         FROM apps WHERE is_public = 1 ORDER BY name'
-      );
+    if (!$user) {
+      respond(['loggedIn' => false, 'displayName' => null, 'apps' => []]);
     }
+
+    $stmt = db()->prepare(
+      'SELECT a.app_key, a.name, a.description, a.icon_emoji, a.icon_color_class,
+              a.launch_url, a.is_public, a.sso_enabled, aa.can_edit
+       FROM apps a
+       INNER JOIN app_access aa ON aa.app_id = a.id AND aa.user_id = ?
+       ORDER BY a.name'
+    );
+    $stmt->bind_param('i', $user['id']);
     $stmt->execute();
     $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
     $stmt->close();
 
     respond([
-      'loggedIn' => $user !== null,
+      'loggedIn' => true,
       'displayName' => $user['display_name'] ?? null,
       'apps' => array_map(fn($r) => [
         'appKey' => $r['app_key'],
@@ -465,7 +463,7 @@ switch ($action) {
         'launchUrl' => $r['launch_url'],
         'isPublic' => (bool)$r['is_public'],
         'ssoEnabled' => (bool)$r['sso_enabled'],
-        'canEdit' => (bool)($r['can_edit'] ?? false),
+        'canEdit' => (bool)$r['can_edit'],
       ], $rows),
     ]);
   }
@@ -497,7 +495,7 @@ switch ($action) {
   }
 
   // Every app in the system, with no per-user grant info — used to build
-  // the checkbox grid for inviting someone who doesn't have an account yet.
+  // the access grid for inviting someone who doesn't have an account yet.
   case 'adminAppList': {
     requireAdmin();
     $rows = db()->query('SELECT id AS app_id, app_key, name, icon_emoji, is_public FROM apps ORDER BY name')
@@ -511,19 +509,19 @@ switch ($action) {
     ], $rows)]);
   }
 
-  // Body: { email, appIds: [...] }. The account and its app_access grants
-  // are created for real right now, not deferred until the invitee signs
-  // up — password_hash stays NULL until they do (see the `login`/`signup`
-  // handling of that). Sending to an email that's already fully activated
-  // (has a password) is refused; sending to one that's already invited but
-  // not yet activated re-syncs its grants to whatever's checked now and
-  // resends the email with a fresh token/expiry — this one action doubles
-  // as "resend."
+  // Body: { email, grants: [{ appId, granted, canEdit }, ...] }. The
+  // account and its app_access grants are created for real right now, not
+  // deferred until the invitee signs up — password_hash stays NULL until
+  // they do (see the `login`/`signup` handling of that). Sending to an
+  // email that's already fully activated (has a password) is refused;
+  // sending to one that's already invited but not yet activated re-syncs
+  // its grants to whatever's set now and resends the email with a fresh
+  // token/expiry — this one action doubles as "resend."
   case 'adminSendInvitation': {
     $admin = requireAdmin();
     $body = jsonBody();
     $email = trim((string)($body['email'] ?? ''));
-    $appIds = is_array($body['appIds'] ?? null) ? array_map('intval', $body['appIds']) : [];
+    $grants = is_array($body['grants'] ?? null) ? $body['grants'] : [];
 
     if (!filter_var($email, FILTER_VALIDATE_EMAIL)) {
       fail('A valid email address is required');
@@ -549,20 +547,31 @@ switch ($action) {
       $ins->close();
     }
 
-    // Sync app_access to exactly what's checked now — same insert/delete
-    // diff adminSaveAccess does, so this also works as a plain "adjust this
+    // Sync app_access to exactly what's set now — same insert/delete diff
+    // adminSaveAccess does, so this also works as a plain "adjust this
     // pending invite's apps" action even without resending the email.
+    // Edit always implies access — a grant with canEdit=true but
+    // granted=false is treated as granted=true, same enforcement as
+    // adminSaveAccess.
+    $canEditByAppId = []; // appId => canEdit, only for apps that end up granted
+    foreach ($grants as $g) {
+      $appId = (int)($g['appId'] ?? 0);
+      $canEdit = (bool)($g['canEdit'] ?? false);
+      if ($appId > 0 && ($canEdit || (bool)($g['granted'] ?? false))) {
+        $canEditByAppId[$appId] = $canEdit;
+      }
+    }
     $allApps = db()->query('SELECT id FROM apps')->fetch_all(MYSQLI_ASSOC);
-    $checked = array_flip($appIds);
     $insertGrant = db()->prepare(
-      'INSERT INTO app_access (user_id, app_id, can_edit) VALUES (?, ?, 1)
-       ON DUPLICATE KEY UPDATE can_edit = 1'
+      'INSERT INTO app_access (user_id, app_id, can_edit) VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE can_edit = ?'
     );
     $deleteGrant = db()->prepare('DELETE FROM app_access WHERE user_id = ? AND app_id = ?');
     foreach ($allApps as $a) {
       $appId = (int)$a['id'];
-      if (isset($checked[$appId])) {
-        $insertGrant->bind_param('ii', $userId, $appId);
+      if (array_key_exists($appId, $canEditByAppId)) {
+        $canEdit = $canEditByAppId[$appId] ? 1 : 0;
+        $insertGrant->bind_param('iiii', $userId, $appId, $canEdit, $canEdit);
         $insertGrant->execute();
       } else {
         $deleteGrant->bind_param('ii', $userId, $appId);
@@ -652,12 +661,14 @@ switch ($action) {
     ], $rows)]);
   }
 
-  // Body: { userId, grants: [{ appId, granted }, ...] } — one entry per app
-  // in the system, reflecting the current state of every checkbox. Diffs
-  // against what's already in app_access: inserts newly-checked apps
-  // (can_edit = 1), deletes newly-unchecked ones, leaves everything else
-  // alone (so an existing grant's granted_at/can_edit isn't disturbed just
-  // because the box was already checked).
+  // Body: { userId, grants: [{ appId, granted, canEdit }, ...] } — one
+  // entry per app in the system, reflecting the current state of that
+  // app's three-way control (None / Access / Access + Edit). Diffs against
+  // what's already in app_access: inserts/updates apps that are granted
+  // (with the given can_edit), deletes ones that aren't granted at all.
+  // Edit always implies access — canEdit=true with granted=false is
+  // treated as granted=true, so it's not possible to end up with an
+  // edit-only row that has no access.
   case 'adminSaveAccess': {
     requireAdmin();
     $body = jsonBody();
@@ -668,19 +679,21 @@ switch ($action) {
     }
 
     $insert = db()->prepare(
-      'INSERT INTO app_access (user_id, app_id, can_edit) VALUES (?, ?, 1)
-       ON DUPLICATE KEY UPDATE user_id = user_id'
+      'INSERT INTO app_access (user_id, app_id, can_edit) VALUES (?, ?, ?)
+       ON DUPLICATE KEY UPDATE can_edit = ?'
     );
     $delete = db()->prepare('DELETE FROM app_access WHERE user_id = ? AND app_id = ?');
 
     foreach ($grants as $g) {
       $appId = (int)($g['appId'] ?? 0);
-      $granted = (bool)($g['granted'] ?? false);
+      $canEdit = (bool)($g['canEdit'] ?? false);
+      $granted = (bool)($g['granted'] ?? false) || $canEdit;
       if ($appId <= 0) {
         continue;
       }
       if ($granted) {
-        $insert->bind_param('ii', $userId, $appId);
+        $canEditInt = $canEdit ? 1 : 0;
+        $insert->bind_param('iiii', $userId, $appId, $canEditInt, $canEditInt);
         $insert->execute();
       } else {
         $delete->bind_param('ii', $userId, $appId);

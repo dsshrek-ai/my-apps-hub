@@ -65,10 +65,14 @@
   .app-row { display: flex; align-items: center; gap: 0.75rem; padding: 0.6rem 0;
     border-bottom: 1px solid var(--border); }
   .app-row:last-child { border-bottom: none; }
-  .app-row input[type="checkbox"] { width: 20px; height: 20px; flex-shrink: 0; }
   .app-row .emoji { font-size: 1.2rem; }
   .app-row .name { flex: 1; font-weight: 700; }
   .app-row .public-tag { font-size: 0.8rem; color: var(--text-muted); font-weight: 400; }
+  .app-row select {
+    flex-shrink: 0; font-size: 0.85rem; font-family: 'Nunito', sans-serif; font-weight: 700;
+    padding: 0.4rem 0.6rem; border: 1px solid var(--border); border-radius: 8px;
+    background: var(--cream); color: var(--text);
+  }
 
   .hidden { display: none; }
 </style>
@@ -117,7 +121,7 @@ let auth = null;
 let currentUserId = null;
 let currentUserEmail = null;
 let currentUserActivated = true;
-let currentApps = []; // [{ appId, appKey, name, iconEmoji, isPublic, granted }]
+let currentApps = []; // [{ appId, appKey, name, iconEmoji, isPublic, granted, canEdit }]
 
 const loginCard = document.getElementById('loginCard');
 const appEl = document.getElementById('app');
@@ -217,6 +221,28 @@ async function lookupUser() {
 }
 
 // ── access grid ──────────────────────────────────────────────────────────
+// Three-way control per app: 'none' (no row), 'access' (row, can_edit=0),
+// 'edit' (row, can_edit=1) — edit always implies access.
+function levelOf(a) { return !a.granted ? 'none' : (a.canEdit ? 'edit' : 'access'); }
+
+function levelSelect(appId, level) {
+  return `
+    <select data-app-id="${appId}">
+      <option value="none"   ${level === 'none'   ? 'selected' : ''}>No access</option>
+      <option value="access" ${level === 'access' ? 'selected' : ''}>Access</option>
+      <option value="edit"   ${level === 'edit'   ? 'selected' : ''}>Access + Edit</option>
+    </select>
+  `;
+}
+
+function readGrantsFromGrid() {
+  return Array.from(accessCard.querySelectorAll('select[data-app-id]')).map(sel => ({
+    appId: Number(sel.dataset.appId),
+    granted: sel.value !== 'none',
+    canEdit: sel.value === 'edit',
+  }));
+}
+
 async function loadAccessGrid() {
   const data = await fetchJSON('adminGetUserAccess', { params: { userId: currentUserId } });
   currentApps = data.apps;
@@ -228,10 +254,10 @@ function renderAccessGrid() {
   accessCard.innerHTML = `
     ${currentApps.map(a => `
       <div class="app-row">
-        <input type="checkbox" data-app-id="${a.appId}" ${a.granted ? 'checked' : ''}>
         <span class="emoji">${a.iconEmoji || '📦'}</span>
         <span class="name">${escHtml(a.name)}</span>
-        ${a.isPublic ? '<span class="public-tag">(Public — box grants editing)</span>' : ''}
+        ${a.isPublic ? '<span class="public-tag">(Public)</span>' : ''}
+        ${levelSelect(a.appId, levelOf(a))}
       </div>
     `).join('')}
     <button class="btn" id="saveAccessBtn" style="margin-top:1rem">Save</button>
@@ -248,15 +274,14 @@ function renderAccessGrid() {
 }
 
 // Same action as sending a first invitation — it syncs app_access to
-// whatever's currently checked and sends a fresh activation email either
+// whatever's currently selected and sends a fresh activation email either
 // way, so this doubles as "save and resend" in one click.
 async function resendInvitation() {
   const msg = document.getElementById('saveMsg');
-  const appIds = Array.from(accessCard.querySelectorAll('input[type="checkbox"]:checked'))
-    .map(cb => Number(cb.dataset.appId));
+  const grants = readGrantsFromGrid();
   msg.innerHTML = '';
   try {
-    await fetchJSON('adminSendInvitation', { method: 'POST', body: { email: currentUserEmail, appIds } });
+    await fetchJSON('adminSendInvitation', { method: 'POST', body: { email: currentUserEmail, grants } });
     msg.innerHTML = '<div class="success-msg">Invitation re-sent.</div>';
     await loadAccessGrid();
   } catch (err) {
@@ -266,10 +291,7 @@ async function resendInvitation() {
 
 async function saveAccess() {
   const msg = document.getElementById('saveMsg');
-  const grants = Array.from(accessCard.querySelectorAll('input[type="checkbox"]')).map(cb => ({
-    appId: Number(cb.dataset.appId),
-    granted: cb.checked,
-  }));
+  const grants = readGrantsFromGrid();
   msg.innerHTML = '';
   try {
     await fetchJSON('adminSaveAccess', { method: 'POST', body: { userId: currentUserId, grants } });
@@ -294,14 +316,14 @@ async function renderInviteGrid(email) {
   }
 
   accessCard.innerHTML = `
-    <p class="user-found">Inviting <strong>${escHtml(email)}</strong> — pick which apps to grant in
-      addition to whatever's already public:</p>
+    <p class="user-found">Inviting <strong>${escHtml(email)}</strong> — pick access/edit for each app
+      (nothing is granted just because an app is public):</p>
     ${apps.map(a => `
       <div class="app-row">
-        <input type="checkbox" data-app-id="${a.appId}">
         <span class="emoji">${a.iconEmoji || '📦'}</span>
         <span class="name">${escHtml(a.name)}</span>
-        ${a.isPublic ? '<span class="public-tag">(Public — box grants editing)</span>' : ''}
+        ${a.isPublic ? '<span class="public-tag">(Public)</span>' : ''}
+        ${levelSelect(a.appId, 'none')}
       </div>
     `).join('')}
     <button class="btn" id="sendInviteBtn" style="margin-top:1rem">Send Invitation</button>
@@ -312,11 +334,10 @@ async function renderInviteGrid(email) {
 
 async function sendInvitation(email) {
   const msg = document.getElementById('inviteMsg');
-  const appIds = Array.from(accessCard.querySelectorAll('input[type="checkbox"]:checked'))
-    .map(cb => Number(cb.dataset.appId));
+  const grants = readGrantsFromGrid();
   msg.innerHTML = '';
   try {
-    const data = await fetchJSON('adminSendInvitation', { method: 'POST', body: { email, appIds } });
+    const data = await fetchJSON('adminSendInvitation', { method: 'POST', body: { email, grants } });
     currentUserId = data.userId;
     currentUserEmail = email;
     currentUserActivated = false;

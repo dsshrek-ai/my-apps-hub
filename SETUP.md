@@ -1,9 +1,11 @@
 # My Apps Hub — Setup
 
-A single login page for all your personal apps: public apps are open to
-anyone, private apps only show up (and only open) for people you've
-explicitly granted access to. Built on **MyDataWorld**, the same shared
-database T-Minus and Shed Inventory already use.
+A single login page for all your personal apps: every app — public or
+private — only shows up (and only opens) for people you've explicitly
+granted access to. `is_public` no longer bypasses that; it's just
+descriptive metadata now (see "Access and Edit, per app" below). Built on
+**MyDataWorld**, the same shared database T-Minus and Shed Inventory
+already use.
 
 ## 1. Update the database
 
@@ -97,29 +99,28 @@ To grant someone access to a normal app:
 
 1. Have them sign up through the Hub — this only creates their login,
    nothing more.
-2. Open the Admin Tool tile, enter their email, and check whichever apps
-   they should have. Save.
-   - For a **private** app, checking the box is what lets them see/open it
-     at all.
-   - For a **public** app, everyone can already open it — checking the box
-     here grants **edit** rights specifically (see "Public apps with
-     editors" below). Those are marked `(Public — box grants editing)` in
-     the list so it's not ambiguous which kind of grant you're making.
+2. Open the Admin Tool tile, enter their email, and set each app's
+   dropdown to **No access**, **Access**, or **Access + Edit**. Save.
+   - **No access** — the app doesn't show up for them at all, public or not.
+   - **Access** — they see the tile and can open/use the app.
+   - **Access + Edit** — access, plus edit rights inside apps that check for
+     it (see "Access and Edit, per app" below). Apps marked `(Public)` are
+     just informational — that flag no longer changes what's granted.
 3. If the email isn't found yet, the tool offers to **send an invitation**
    instead — see below.
 
 ## Inviting someone who doesn't have an account yet
 
 If `adminLookupUser` comes back empty, `admin.html` shows a **Send
-Invitation** button instead of the access grid. Clicking it lets you pick
-which apps to grant (same checkbox list, same `(Public — box grants
-editing)` meaning as a normal grant) before anyone has signed up:
+Invitation** button instead of the access grid. Clicking it lets you set
+the same per-app dropdown (defaulting every app to **No access**) before
+anyone has signed up:
 
 1. Enter their email, click **Send Invitation** when the "no account"
-   message appears, check whichever apps they should have, and send.
+   message appears, set each app's access level, and send.
 2. This creates their `users` row **immediately** — `password_hash = NULL`
-   marks it as not yet activated — and grants `app_access` for the checked
-   apps right away too, exactly like a normal grant. Nothing about their
+   marks it as not yet activated — and grants `app_access` for whatever was
+   set right away too, exactly like a normal grant. Nothing about their
    access is deferred until they finish signing up; a pending invitation is
    purely "this account exists and is authorized, it just has no password
    yet." A row in `invitations` (14-day expiry) ties it to who invited them
@@ -147,24 +148,25 @@ editing)` meaning as a normal grant) before anyone has signed up:
    (and the account it created), delete the `users` row directly via
    phpMyAdmin (cascades to `app_access`/`invitations`/`sessions`).
 
-## Public apps with editors (`can_edit`)
+## Access and Edit, per app (`app_access` + `can_edit`)
 
-Some public apps need a middle ground: anyone can use the app, but only
-specific people should be able to edit its content. **Senior Family
-Cookbook** is the motivating case — everyone can browse/scale/favorite/
-shopping-list, but only people you authorize should be able to add or edit
-recipes.
+Every app needs an explicit `app_access` row before it shows up for
+someone at all — that row is "Access": they can see the tile and open/use
+the app. `can_edit` is a second, independent tier on top of that same row:
+"Access + Edit" also lets them edit the app's content, for apps built to
+check it. **Senior Family Cookbook** is the motivating case — anyone with
+Access can browse/scale/favorite/shopping-list, but only people with
+Access + Edit can add or edit recipes.
 
-`app_access.can_edit` is what models this. For a private app it's always
-`1` (no view-only tier exists there yet — having a grant at all means full
-access). For a public app, a grant means "can edit"; no grant just means
-"uses it like everyone else." `admin.html`'s checkbox always creates grants
-with `can_edit = 1`, since that's the only kind of grant a public app needs
-today.
+`admin.html`'s per-app dropdown (No access / Access / Access + Edit) maps
+directly to "no row" / "row, `can_edit = 0`" / "row, `can_edit = 1`". Edit
+always implies access — there's no way to grant edit without access.
 
-**Important caveat**: this only takes effect for apps that actually check
-it. Right now, only apps built to consult MyDataWorld can enforce this at
-all.
+**Important caveat**: `can_edit` only takes effect for apps that actually
+check it. Right now, only apps built to consult MyDataWorld can enforce
+this at all — for everything else, Access is the only real gate (whether
+someone can see the tile), and `can_edit` doesn't mean anything further
+inside that app yet.
 
 ## Roadmap
 
@@ -209,10 +211,13 @@ they were never sharing this login to begin with. Marking one of those apps
 
 ## Notes
 
-- Public apps show up in the tab strip for anyone, logged in or not.
-- Private apps only appear once you're logged in **and** have a matching
-  `app_access` row — no partial "locked" tile is shown for apps you don't
-  have; they're just not in the list at all.
-- Access is per-app, not per-household or per-role — matches the simple
-  binary model used everywhere else so far (see Shed Inventory's own
+- Every app — public or private — only appears once you're logged in
+  **and** have a matching `app_access` row. Anonymous visitors always see
+  an empty tab strip and just the sign-in card; there's no way to hold a
+  grant without an account. No partial "locked" tile is shown for apps you
+  don't have — they're just not in the list at all.
+- `is_public` is purely descriptive now (shown as a `(Public)` tag in
+  `admin.html`) — it doesn't change who can see or open an app.
+- Access/Edit is per-app, not per-household or per-role — matches the
+  simple model used everywhere else so far (see Shed Inventory's own
   household-access notes for the same philosophy).

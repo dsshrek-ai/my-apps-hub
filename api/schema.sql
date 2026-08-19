@@ -41,12 +41,14 @@ CREATE TABLE IF NOT EXISTS app_access (
 ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- ---------- SCHEMA CHANGE: admin flag + edit-level access ----------
--- Run once. is_admin gates the new admin.html tool. can_edit distinguishes
--- "can open this app" from "can edit within it" — only meaningful for
--- public apps today (a public app needs no app_access row to be *used*,
--- so a row there means "this person can edit," not "has access"). Defaults
--- to 1 so every existing grant keeps meaning what it already means: full
--- access to a private app.
+-- Run once. is_admin gates the admin.html tool. can_edit distinguishes
+-- "can open this app" from "can edit within it": an app_access row is now
+-- required to even see/use ANY app, public or private — is_public no
+-- longer bypasses that check, it's just descriptive metadata. can_edit=0
+-- on that row means access only (see/use); can_edit=1 means access + edit.
+-- Edit always implies access — there's no such thing as an edit-only row
+-- with no access. Defaults to 1 so every pre-existing grant (from before
+-- this change) keeps its prior meaning: full access to a private app.
 
 ALTER TABLE users ADD COLUMN is_admin TINYINT(1) NOT NULL DEFAULT 0;
 ALTER TABLE app_access ADD COLUMN can_edit TINYINT(1) NOT NULL DEFAULT 1;
