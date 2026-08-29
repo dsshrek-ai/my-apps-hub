@@ -211,3 +211,32 @@ ALTER TABLE invitations ADD CONSTRAINT fk_invitations_user
 -- INSERT INTO app_access (user_id, app_id)
 -- SELECT u.id, a.id FROM users u, apps a
 -- WHERE u.username = 'you@example.com' AND a.is_public = 0;
+
+-- ---------- SCHEMA CHANGE: per-app usage logging ----------
+-- Shared across every MyDataWorld app, not just one -- app_key identifies
+-- which app logged the row (e.g. 'south-jordan-choral-arts'), so any app's
+-- own api.php can start writing to this table without a schema change of
+-- its own. One row per user per app per CALENDAR DAY (not per request --
+-- see the ON DUPLICATE KEY UPDATE pattern below), so "usage by day" is a
+-- straight GROUP BY instead of needing to dedupe a request-level log.
+--
+-- A single last-used timestamp on app_access was considered instead, but
+-- rejected: it only ever holds the most recent touch, overwritten every
+-- time, so it can't answer "usage by day" at all -- this table can.
+--
+-- Logging call (run once per request, from wherever an app validates its
+-- session token -- e.g. requireMember()/requireUser() equivalents):
+--   INSERT INTO app_usage_log (user_id, app_key, access_date, first_seen_at, last_seen_at, hit_count)
+--   VALUES (?, '<app_key>', CURDATE(), NOW(), NOW(), 1)
+--   ON DUPLICATE KEY UPDATE last_seen_at = NOW(), hit_count = hit_count + 1;
+CREATE TABLE IF NOT EXISTS app_usage_log (
+  id             INT AUTO_INCREMENT PRIMARY KEY,
+  user_id        INT NOT NULL,
+  app_key        VARCHAR(100) NOT NULL,
+  access_date    DATE NOT NULL,
+  first_seen_at  DATETIME NOT NULL,
+  last_seen_at   DATETIME NOT NULL,
+  hit_count      INT NOT NULL DEFAULT 1,
+  UNIQUE KEY uq_user_app_date (user_id, app_key, access_date),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
