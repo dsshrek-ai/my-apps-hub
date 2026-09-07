@@ -658,6 +658,7 @@ switch ($action) {
       'iconEmoji' => $r['icon_emoji'],
       'isPublic' => (bool)$r['is_public'],
       'granted' => (bool)$r['has_grant'],
+      'canEdit' => (bool)$r['can_edit'],
     ], $rows)]);
   }
 

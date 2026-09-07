@@ -240,3 +240,62 @@ CREATE TABLE IF NOT EXISTS app_usage_log (
   UNIQUE KEY uq_user_app_date (user_id, app_key, access_date),
   FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------- NEW APP: Scripture Learning ----------
+-- Safe to re-run (ON DUPLICATE KEY UPDATE, same pattern as the main seed
+-- block above). The app's own repo has its own schema.sql for its
+-- scripture_items table -- this just registers it with the Hub.
+
+INSERT INTO apps (app_key, name, is_public, description, icon_emoji, icon_color_class, launch_url, sso_enabled) VALUES
+  ('scripture-learning', 'Scripture Learning', 0,
+   'Memorize scripture with progressive hints and spaced repetition -- add your own passages, practice them, and keep a daily review queue.',
+   '📜', 'icon-purple', 'https://dsshrek-ai.github.io/scripture-learning/', 1)
+ON DUPLICATE KEY UPDATE
+  name             = VALUES(name),
+  is_public        = VALUES(is_public),
+  description      = VALUES(description),
+  icon_emoji       = VALUES(icon_emoji),
+  icon_color_class = VALUES(icon_color_class),
+  launch_url       = VALUES(launch_url),
+  sso_enabled      = VALUES(sso_enabled);
+
+-- ---------- NEW APP: Choir Connect ----------
+-- Safe to re-run (ON DUPLICATE KEY UPDATE). Two rows: the member app and its
+-- admin kiosk. The app's own repo has api/schema.sql for its cc_* tables --
+-- this just registers it with the Hub. Both are sso_enabled so launching from
+-- the Hub hands off the session token.
+
+INSERT INTO apps (app_key, name, is_public, description, icon_emoji, icon_color_class, launch_url, sso_enabled) VALUES
+  ('choir-connect', 'Choir Connect', 0,
+   'A per-choir app for singers -- browse rehearsal tracks (programs, songs, part tracks), with schedule and roster planned next. Multi-choir: pick your choir at the top.',
+   '🎼', 'icon-blue', 'https://dsshrek-ai.github.io/choir-connect/', 1),
+
+  ('choir-connect-admin', 'Choir Connect Admin', 0,
+   'Maintenance panel for Choir Connect -- manage choirs, programs, rehearsal tracks, and which users belong to which choir.',
+   '🔐', 'icon-blue', 'https://dsshrek-ai.github.io/choir-connect/admin.html', 1)
+ON DUPLICATE KEY UPDATE
+  name             = VALUES(name),
+  is_public        = VALUES(is_public),
+  description      = VALUES(description),
+  icon_emoji       = VALUES(icon_emoji),
+  icon_color_class = VALUES(icon_color_class),
+  launch_url       = VALUES(launch_url),
+  sso_enabled      = VALUES(sso_enabled);
+
+-- ---------- NEW APP: Reading List ----------
+-- Safe to re-run (ON DUPLICATE KEY UPDATE). Single-user book tracker; the app's
+-- own repo has api/schema.sql for its reading_books table -- this just registers
+-- it with the Hub. sso_enabled so launching from the Hub hands off the token.
+
+INSERT INTO apps (app_key, name, is_public, description, icon_emoji, icon_color_class, launch_url, sso_enabled) VALUES
+  ('reading-list', 'Reading List', 0,
+   'A lightweight book tracker -- Series, Title, Author, acquire link, plus Kindle/Audible/Hard Copy type and a Not Started / Read Some / Finished status rolled up per series.',
+   '📚', 'icon-blue', 'https://dsshrek-ai.github.io/reading-list/', 1)
+ON DUPLICATE KEY UPDATE
+  name             = VALUES(name),
+  is_public        = VALUES(is_public),
+  description      = VALUES(description),
+  icon_emoji       = VALUES(icon_emoji),
+  icon_color_class = VALUES(icon_color_class),
+  launch_url       = VALUES(launch_url),
+  sso_enabled      = VALUES(sso_enabled);
