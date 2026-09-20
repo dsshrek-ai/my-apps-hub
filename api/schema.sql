@@ -299,3 +299,22 @@ ON DUPLICATE KEY UPDATE
   icon_color_class = VALUES(icon_color_class),
   launch_url       = VALUES(launch_url),
   sso_enabled      = VALUES(sso_enabled);
+
+-- ---------- NEW APP: Life Tempo ----------
+-- Safe to re-run (ON DUPLICATE KEY UPDATE). Retirement-engagement tracker --
+-- the app's own repo has api/schema.sql, which stays empty until Phase 2
+-- introduces its first domain tables -- this just registers it with the Hub.
+-- sso_enabled so launching from the Hub hands off the token.
+
+INSERT INTO apps (app_key, name, is_public, description, icon_emoji, icon_color_class, launch_url, sso_enabled) VALUES
+  ('life-tempo', 'Life Tempo', 0,
+   'A retirement-engagement tracker -- log activities across health, spiritual life, music, shared life with a spouse, learning, service, and paid work, and see whether things are staying in balance over time.',
+   '🧭', 'icon-purple', 'https://dsshrek-ai.github.io/life-tempo/', 1)
+ON DUPLICATE KEY UPDATE
+  name             = VALUES(name),
+  is_public        = VALUES(is_public),
+  description      = VALUES(description),
+  icon_emoji       = VALUES(icon_emoji),
+  icon_color_class = VALUES(icon_color_class),
+  launch_url       = VALUES(launch_url),
+  sso_enabled      = VALUES(sso_enabled);
