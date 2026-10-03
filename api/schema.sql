@@ -318,3 +318,60 @@ ON DUPLICATE KEY UPDATE
   icon_color_class = VALUES(icon_color_class),
   launch_url       = VALUES(launch_url),
   sso_enabled      = VALUES(sso_enabled);
+
+-- ---------- NEW APP: HydraTrack ----------
+-- Safe to re-run (ON DUPLICATE KEY UPDATE). Water-intake tracker with
+-- container-based goals -- the app's own repo has api/schema.sql for its hydra_*
+-- tables -- this just registers it with the Hub. sso_enabled so launching from
+-- the Hub hands off the token.
+
+INSERT INTO apps (app_key, name, is_public, description, icon_emoji, icon_color_class, launch_url, sso_enabled) VALUES
+  ('hydratrack', 'HydraTrack', 0,
+   'A water-intake tracker -- set goals in the containers you actually drink from (3 tumblers + 2 glasses), log a container in one tap, and watch your daily ounces, history, and streaks.',
+   '💧', 'icon-blue', 'https://dsshrek-ai.github.io/hydratrack/', 1)
+ON DUPLICATE KEY UPDATE
+  name             = VALUES(name),
+  is_public        = VALUES(is_public),
+  description      = VALUES(description),
+  icon_emoji       = VALUES(icon_emoji),
+  icon_color_class = VALUES(icon_color_class),
+  launch_url       = VALUES(launch_url),
+  sso_enabled      = VALUES(sso_enabled);
+
+-- ---------- SHARED: user_preferences ----------
+-- Run once. Per-user settings any MyDataWorld app can read and write through
+-- the Hub API (getPreferences / setPreference) -- e.g. which maps or calendar
+-- app to open. Apps never add columns like preferred_maps_app to their own
+-- tables; they read these keys instead.
+--
+-- scope = 'global' (applies to every app) or an apps.app_key (an override
+-- for just that app). Lookup order: app override -> global -> app default.
+CREATE TABLE IF NOT EXISTS user_preferences (
+  id          INT AUTO_INCREMENT PRIMARY KEY,
+  user_id     INT NOT NULL,
+  scope       VARCHAR(100) NOT NULL DEFAULT 'global',
+  pref_key    VARCHAR(100) NOT NULL,
+  pref_value  VARCHAR(500) NOT NULL,
+  updated_at  TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  UNIQUE KEY uq_user_scope_key (user_id, scope, pref_key),
+  FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- ---------- NEW APP: Task Tap ----------
+-- Safe to re-run (ON DUPLICATE KEY UPDATE). Personal tasks & appointments --
+-- the app's own repo has api/schema.sql for its tt_* tables -- this just
+-- registers it with the Hub. sso_enabled so launching from the Hub hands off
+-- the token.
+
+INSERT INTO apps (app_key, name, is_public, description, icon_emoji, icon_color_class, launch_url, sso_enabled) VALUES
+  ('task-tap', 'Task Tap', 0,
+   'Tasks and appointments with one-tap Call, Text, Navigate, and Add to Calendar -- plus checklists, reminders, repeats, attachments, and a 4-character code to hand a task to someone else.',
+   '✅', 'icon-teal', 'https://dsshrek-ai.github.io/task-tap/', 1)
+ON DUPLICATE KEY UPDATE
+  name             = VALUES(name),
+  is_public        = VALUES(is_public),
+  description      = VALUES(description),
+  icon_emoji       = VALUES(icon_emoji),
+  icon_color_class = VALUES(icon_color_class),
+  launch_url       = VALUES(launch_url),
+  sso_enabled      = VALUES(sso_enabled);

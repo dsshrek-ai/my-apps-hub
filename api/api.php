@@ -158,6 +158,71 @@ function requireAdmin(): array {
   return $user;
 }
 
+// ---- Shared user preferences ----
+// Known keys get their values checked and a default. Any other key shaped
+// like "area.name" is accepted as free text (up to 500 chars), so a new app
+// can start using a preference without a Hub change first.
+const PREFERENCE_KEYS = [
+  'maps.provider'     => ['values' => ['ask', 'apple', 'google'], 'default' => 'ask'],
+  'calendar.provider' => ['values' => ['ask', 'apple', 'google'], 'default' => 'ask'],
+  // Minutes before a task; 'none' = no reminder.
+  'default.reminder'  => ['values' => ['none', '0', '15', '30', '60', '120', '1440'], 'default' => 'none'],
+];
+
+function validatePreference(string $scope, string $key, string $value): void {
+  if (!preg_match('/^[a-z0-9]+(\.[a-z0-9_]+)+$/', $key) || strlen($key) > 100) {
+    fail('Invalid preference key');
+  }
+  if ($scope !== 'global') {
+    $stmt = db()->prepare('SELECT 1 FROM apps WHERE app_key = ?');
+    $stmt->bind_param('s', $scope);
+    $stmt->execute();
+    $exists = (bool)$stmt->get_result()->fetch_row();
+    $stmt->close();
+    if (!$exists) {
+      fail('Unknown preference scope');
+    }
+  }
+  if ($value !== '' && isset(PREFERENCE_KEYS[$key]) && !in_array($value, PREFERENCE_KEYS[$key]['values'], true)) {
+    fail('Invalid value for ' . $key);
+  }
+  if (strlen($value) > 500) {
+    fail('Preference value too long');
+  }
+}
+
+function loadPreferences(int $userId, string $app): array {
+  $scopes = $app !== '' ? ['global', $app] : ['global'];
+  $placeholders = implode(',', array_fill(0, count($scopes), '?'));
+  $stmt = db()->prepare("SELECT scope, pref_key, pref_value FROM user_preferences WHERE user_id = ? AND scope IN ($placeholders)");
+  $stmt->bind_param('i' . str_repeat('s', count($scopes)), $userId, ...$scopes);
+  $stmt->execute();
+  $rows = $stmt->get_result()->fetch_all(MYSQLI_ASSOC);
+  $stmt->close();
+
+  $global = [];
+  $appPrefs = [];
+  foreach ($rows as $r) {
+    if ($r['scope'] === 'global') {
+      $global[$r['pref_key']] = $r['pref_value'];
+    } else {
+      $appPrefs[$r['pref_key']] = $r['pref_value'];
+    }
+  }
+  $effective = [];
+  foreach (PREFERENCE_KEYS as $k => $def) {
+    $effective[$k] = $def['default'];
+  }
+  $effective = array_merge($effective, $global, $appPrefs);
+  return [
+    'app' => $app !== '' ? $app : null,
+    // Objects even when empty, so clients can always index into them.
+    'global' => (object)$global,
+    'appOverrides' => (object)$appPrefs,
+    'effective' => (object)$effective,
+  ];
+}
+
 // ---- Router ----
 
 $action = $_GET['action'] ?? '';
@@ -466,6 +531,45 @@ switch ($action) {
         'canEdit' => (bool)$r['can_edit'],
       ], $rows),
     ]);
+  }
+
+  // ---------- Shared user preferences (any MyDataWorld app) ----------
+  // Every app already holds a session token from the shared login, so it can
+  // call these directly. See shared/mdw-prefs.js for the browser helper.
+
+  // GET ?action=getPreferences&app=<app_key>  (app optional)
+  // -> global settings, this app's overrides, and the effective value of
+  //    each key (app override -> global -> default).
+  case 'getPreferences': {
+    $user = requireUser();
+    $app = trim((string)($_GET['app'] ?? ''));
+    respond(['success' => true] + loadPreferences((int)$user['id'], $app));
+  }
+
+  // POST { scope: 'global' | <app_key>, key, value }
+  // An empty/null value removes the setting, falling back to the next level.
+  case 'setPreference': {
+    $user = requireUser();
+    $body = jsonBody();
+    $scope = trim((string)($body['scope'] ?? 'global'));
+    $key = trim((string)($body['key'] ?? ''));
+    $value = $body['value'] ?? null;
+    $value = $value === null ? '' : trim((string)$value);
+    validatePreference($scope, $key, $value);
+    $userId = (int)$user['id'];
+    if ($value === '') {
+      $stmt = db()->prepare('DELETE FROM user_preferences WHERE user_id = ? AND scope = ? AND pref_key = ?');
+      $stmt->bind_param('iss', $userId, $scope, $key);
+    } else {
+      $stmt = db()->prepare(
+        'INSERT INTO user_preferences (user_id, scope, pref_key, pref_value) VALUES (?, ?, ?, ?)
+         ON DUPLICATE KEY UPDATE pref_value = VALUES(pref_value)'
+      );
+      $stmt->bind_param('isss', $userId, $scope, $key, $value);
+    }
+    $stmt->execute();
+    $stmt->close();
+    respond(['success' => true] + loadPreferences($userId, $scope === 'global' ? '' : $scope));
   }
 
   // ---------- Admin (admin.html) ----------
