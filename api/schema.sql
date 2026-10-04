@@ -375,3 +375,22 @@ ON DUPLICATE KEY UPDATE
   icon_color_class = VALUES(icon_color_class),
   launch_url       = VALUES(launch_url),
   sso_enabled      = VALUES(sso_enabled);
+
+-- ---------- NEW APP: Gary Memorial Admin ----------
+-- Safe to re-run (ON DUPLICATE KEY UPDATE). The memorial site itself
+-- (seniorfamily.org/gary/) is public and needs no login; this registers only
+-- its admin page, so family admins can be granted it and launch it from the
+-- Hub. The site's own repo has api/schema.sql for its gm_* tables.
+
+INSERT INTO apps (app_key, name, is_public, description, icon_emoji, icon_color_class, launch_url, sso_enabled) VALUES
+  ('gary-memorial-admin', 'Gary Memorial Admin', 0,
+   'Family admin for the Remembering Gary site -- review shared memories (including private ones), hide or feature them, add Facebook screenshots, and edit About Gary.',
+   '🕯️', 'icon-rose', 'https://seniorfamily.org/gary/admin.html', 1)
+ON DUPLICATE KEY UPDATE
+  name             = VALUES(name),
+  is_public        = VALUES(is_public),
+  description      = VALUES(description),
+  icon_emoji       = VALUES(icon_emoji),
+  icon_color_class = VALUES(icon_color_class),
+  launch_url       = VALUES(launch_url),
+  sso_enabled      = VALUES(sso_enabled);
