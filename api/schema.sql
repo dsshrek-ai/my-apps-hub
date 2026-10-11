@@ -394,3 +394,22 @@ ON DUPLICATE KEY UPDATE
   icon_color_class = VALUES(icon_color_class),
   launch_url       = VALUES(launch_url),
   sso_enabled      = VALUES(sso_enabled);
+
+-- ---------- NEW APP: TimeCraft ----------
+-- Safe to re-run (ON DUPLICATE KEY UPDATE). Time-block planner: unscheduled
+-- tasks beside a Day / 4 Days calendar. The app's own repo has
+-- api/schema.sql for its tc_* tables -- this just registers it with the Hub.
+-- sso_enabled so launching from the Hub hands off the token.
+
+INSERT INTO apps (app_key, name, is_public, description, icon_emoji, icon_color_class, launch_url, sso_enabled) VALUES
+  ('timecraft', 'TimeCraft', 0,
+   'Plan your day in 15-minute blocks: drag tasks onto a Day or 4-day calendar, color them, add gray lead time, and set repeats.',
+   '🗓️', 'icon-green', 'https://dsshrek-ai.github.io/timecraft/', 1)
+ON DUPLICATE KEY UPDATE
+  name             = VALUES(name),
+  is_public        = VALUES(is_public),
+  description      = VALUES(description),
+  icon_emoji       = VALUES(icon_emoji),
+  icon_color_class = VALUES(icon_color_class),
+  launch_url       = VALUES(launch_url),
+  sso_enabled      = VALUES(sso_enabled);
